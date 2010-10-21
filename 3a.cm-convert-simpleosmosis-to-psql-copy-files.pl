@@ -32,6 +32,7 @@
 ## INCLUDES
 ##
 
+use Math::BigFloat;
 use DBI;
 
 require '../connect/destination.pl';
@@ -232,11 +233,19 @@ require '../connect/destination.pl';
     while (my $ref = $sth_nodes->fetchrow_hashref)
     {
       my($dest_id)   = $hw_id_node + ($ref->{'id'} * -($hw_id_increment_by));
-      my($latitude)  = sprintf( '%ld', ($ref->{'latitude'}  * 10000000000000000) );
-      my($longitude) = sprintf( '%ld', ($ref->{'longitude'} * 10000000000000000) );
+#      my($latitude)  = sprintf( '%lld', ($ref->{'latitude'}  * 10000000000000000) );
+#      my($longitude) = sprintf( '%lld', ($ref->{'longitude'} * 10000000000000000) );
       my($timestamp) = $ref->{'now'};
       my($tile)      = &tile_for_point($ref->{'latitude'},
                                         $ref->{'longitude'});
+
+      # This method should work on non-quad integer aware perls:
+      my($biglatitude)  = Math::BigFloat->new($ref->{'latitude'});
+      my($biglongitude) = Math::BigFloat->new($ref->{'longitude'});
+      $biglatitude->blsft(16, 10);   # Shift left 16 digits
+      $biglongitude->blsft(16, 10);   # Shift left 16 digits
+      my($latitude)  = $biglatitude->bstr();
+      my($longitude) = $biglongitude->bstr();
 
       if ($dest_id > $new_hw_id_node)
       {
