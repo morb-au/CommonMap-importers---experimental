@@ -14,6 +14,9 @@
 # Note: You should create a directory at '../bulk-upload-next-ids'
 #   so that this script can store its state between runs.
 
+# You'll need access to libarchive, e.g. from
+#   http://gnuwin32.sourceforge.net/packages/libarchive.htm 
+
 # Brendan Morley, 2010-06-09
 
 # In the spirit of the CC-BY licence used by CommonMap, this script is
@@ -70,7 +73,7 @@ require '../connect/destination.pl';
   
   
   ## Destination directory for PostgreSQL COPY files
-  $psql_copy_path = '../for-upload/'.$hw_id_changeset.'/';
+  $psql_copy_path = '../for-upload/'.$hw_id_changeset;
   
 ##
 ## CODE
@@ -187,7 +190,7 @@ require '../connect/destination.pl';
   {
 
     my($dest_id) = $hw_id_changeset;
-    my($created_by) = escape_tsv_text('3a.bm-convert-simpleosmosis-to-psql-copy-files.pl');
+    my($created_by) = escape_tsv_text('3a.cm-convert-simpleosmosis-to-psql-copy-files.pl');
     my($comment) = escape_tsv_text(
                     "Automated import of ".
                     $ENV{'OGR_DATASOURCE_PROVIDER'}.
@@ -559,8 +562,8 @@ require '../connect/destination.pl';
 
   sub generate_changeset
   {
-    open(CHANGESET,      '>'.$psql_copy_path.'cm.'.$hw_id_changeset.'.changeset.tsv');
-    open(CHANGESET_TAGS, '>'.$psql_copy_path.'cm.'.$hw_id_changeset.'.changeset_tags.tsv');
+    open(CHANGESET,      '>'.$psql_copy_path.'/cm.'.$hw_id_changeset.'.changeset.tsv');
+    open(CHANGESET_TAGS, '>'.$psql_copy_path.'/cm.'.$hw_id_changeset.'.changeset_tags.tsv');
     
     &get_changeset;
     &get_changeset_tags;
@@ -571,10 +574,10 @@ require '../connect/destination.pl';
   
   sub generate_nodes
   {
-    open(CURRENT_NODES,     '>'.$psql_copy_path.'cm.'.$hw_id_changeset.'.current_nodes.tsv');
-    open(NODES,             '>'.$psql_copy_path.'cm.'.$hw_id_changeset.'.nodes.tsv');
-    open(CURRENT_NODE_TAGS, '>'.$psql_copy_path.'cm.'.$hw_id_changeset.'.current_node_tags.tsv');
-    open(NODE_TAGS,         '>'.$psql_copy_path.'cm.'.$hw_id_changeset.'.node_tags.tsv');
+    open(CURRENT_NODES,     '>'.$psql_copy_path.'/cm.'.$hw_id_changeset.'.current_nodes.tsv');
+    open(NODES,             '>'.$psql_copy_path.'/cm.'.$hw_id_changeset.'.nodes.tsv');
+    open(CURRENT_NODE_TAGS, '>'.$psql_copy_path.'/cm.'.$hw_id_changeset.'.current_node_tags.tsv');
+    open(NODE_TAGS,         '>'.$psql_copy_path.'/cm.'.$hw_id_changeset.'.node_tags.tsv');
     
     &get_nodes;
     &get_node_tags;
@@ -587,12 +590,12 @@ require '../connect/destination.pl';
   
   sub generate_ways
   {
-    open(CURRENT_WAYS,      '>'.$psql_copy_path.'cm.'.$hw_id_changeset.'.current_ways.tsv');
-    open(WAYS,              '>'.$psql_copy_path.'cm.'.$hw_id_changeset.'.ways.tsv');
-    open(CURRENT_WAY_TAGS,  '>'.$psql_copy_path.'cm.'.$hw_id_changeset.'.current_way_tags.tsv');
-    open(WAY_TAGS,          '>'.$psql_copy_path.'cm.'.$hw_id_changeset.'.way_tags.tsv');
-    open(CURRENT_WAY_NODES, '>'.$psql_copy_path.'cm.'.$hw_id_changeset.'.current_way_nodes.tsv');
-    open(WAY_NODES,         '>'.$psql_copy_path.'cm.'.$hw_id_changeset.'.way_nodes.tsv');
+    open(CURRENT_WAYS,      '>'.$psql_copy_path.'/cm.'.$hw_id_changeset.'.current_ways.tsv');
+    open(WAYS,              '>'.$psql_copy_path.'/cm.'.$hw_id_changeset.'.ways.tsv');
+    open(CURRENT_WAY_TAGS,  '>'.$psql_copy_path.'/cm.'.$hw_id_changeset.'.current_way_tags.tsv');
+    open(WAY_TAGS,          '>'.$psql_copy_path.'/cm.'.$hw_id_changeset.'.way_tags.tsv');
+    open(CURRENT_WAY_NODES, '>'.$psql_copy_path.'/cm.'.$hw_id_changeset.'.current_way_nodes.tsv');
+    open(WAY_NODES,         '>'.$psql_copy_path.'/cm.'.$hw_id_changeset.'.way_nodes.tsv');
     
     &get_ways;
     &get_way_tags;
@@ -609,12 +612,12 @@ require '../connect/destination.pl';
   
   sub generate_relations
   {
-    open(CURRENT_RELATIONS,        '>'.$psql_copy_path.'cm.'.$hw_id_changeset.'.current_relations.tsv');
-    open(RELATIONS,                '>'.$psql_copy_path.'cm.'.$hw_id_changeset.'.relations.tsv');
-    open(CURRENT_RELATION_TAGS,    '>'.$psql_copy_path.'cm.'.$hw_id_changeset.'.current_relation_tags.tsv');
-    open(RELATION_TAGS,            '>'.$psql_copy_path.'cm.'.$hw_id_changeset.'.relation_tags.tsv');
-    open(CURRENT_RELATION_MEMBERS, '>'.$psql_copy_path.'cm.'.$hw_id_changeset.'.current_relation_members.tsv');
-    open(RELATION_MEMBERS,         '>'.$psql_copy_path.'cm.'.$hw_id_changeset.'.relation_members.tsv');
+    open(CURRENT_RELATIONS,        '>'.$psql_copy_path.'/cm.'.$hw_id_changeset.'.current_relations.tsv');
+    open(RELATIONS,                '>'.$psql_copy_path.'/cm.'.$hw_id_changeset.'.relations.tsv');
+    open(CURRENT_RELATION_TAGS,    '>'.$psql_copy_path.'/cm.'.$hw_id_changeset.'.current_relation_tags.tsv');
+    open(RELATION_TAGS,            '>'.$psql_copy_path.'/cm.'.$hw_id_changeset.'.relation_tags.tsv');
+    open(CURRENT_RELATION_MEMBERS, '>'.$psql_copy_path.'/cm.'.$hw_id_changeset.'.current_relation_members.tsv');
+    open(RELATION_MEMBERS,         '>'.$psql_copy_path.'/cm.'.$hw_id_changeset.'.relation_members.tsv');
     
     &get_relations;
     &get_relation_tags;
@@ -674,8 +677,11 @@ require '../connect/destination.pl';
   print "Generating changeset...\n";
   &generate_changeset;
   
-  
-  
+
+  # BZip2 them all up  
+  system '"'.$ENV{PATH_TO_TAR}.'"'." -jcvf $psql_copy_path/cm.$hw_id_changeset.bz2 $psql_copy_path/*";
+
+
   print "Disconnecting from database...\n";
   &db_disconnect;
 
