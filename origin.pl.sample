@@ -1,0 +1,36 @@
+#!/usr/bin/perl
+
+# Origin connection details for "2.cm-convert-ogr-postgis-to-simpleosmosis-postgres.pl"
+
+# README: Copy this sample file to '../connect/origin.pl' and adjust the
+# variables below for your local situation.
+
+# Brendan Morley, 2009-12-30
+
+# In the spirit of the CC BY licence used by CommonMap, this script is
+# published under the BSD licence.
+
+##
+## SETTINGS
+##
+
+  ## Segmented processing
+  
+  # used when the original run produces a huge changeset that would trigger
+  # the load throttling on the production API.
+  # subsequent runs can elect to start (part) way through the origin dataset
+  # using these 2 parameters.
+  $start_origin_from_table = undef;  # or specify the table's name
+  $start_origin_from_row = 0;
+
+  ## Connection string - see DBD::Pg DBI connect() documentation for string format
+
+  # Connection details for origin database (ogr PostGIS format)
+
+  $conn_origin     = 'dbi:Pg:dbname=your_origin_database_name_here';
+  $user_origin     = 'your_origin_database_username_here';
+  $password_origin = 'your_origin_database_password_here';
+
+##
+## ENDS
+##
