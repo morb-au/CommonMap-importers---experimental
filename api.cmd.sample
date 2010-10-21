@@ -1,0 +1,14 @@
+REM  Yes this is a Windows command file.
+
+REM  Called by '4.cm-convert-osmchange-to-osm-upload.cmd'
+REM  for OpenStreetMap/CommonMap API connection details.
+
+REM  README: Copy this sample file to '../connect/api.cmd' and adjust the
+REM  variables below for your local situation.
+
+SET OSMOSIS_DIRECTORY=your_path_to_osmosis_here
+SET API_SERVER_URL="your_osm_cm_api_url_here"
+SET API_USER="your_api_user_here"
+SET API_PASSWORD="your_api_password_here"
+
+REM Ends.
