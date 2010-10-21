@@ -4,6 +4,8 @@
 
 # README: Copy this sample file to '../connect/origin.pl' and adjust the
 # variables below for your local situation.
+# (The database name, user and password must match
+#  those in the corresponding 'origin.cmd' file.)
 
 # Brendan Morley, 2009-12-30
 

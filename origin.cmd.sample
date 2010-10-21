@@ -1,0 +1,15 @@
+REM  Yes this is a Windows command file.
+
+REM  Called by '1.cm-convert-source-to-ogr-postgis.cmd'
+REM  for origin database connection details.
+
+REM  README: Copy this sample file to '../connect/origin.cmd' and adjust the
+REM  variables below for your local situation.
+REM  (The database name, user and password must match
+REM   those in the corresponding 'origin.pl' file.)
+
+SET OGR_DIRECTORY=your_source_directory_of_ogr2ogr_here
+SET SOURCE_DIRECTORY=your_source_directory_of_source_geodata_here
+SET CONNECTION_ORIGIN="dbname=your_origin_database_name_here user=your_origin_database_username_here password=your_origin_database_password_here"
+
+REM Ends.
