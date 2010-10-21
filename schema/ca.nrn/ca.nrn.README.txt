@@ -1,0 +1,8 @@
+
+Get your ca.nrn files from: 
+  ftp://ftp2.cits.rncan.gc.ca/pub/geobase/official/nrn_rrn/
+
+Description of the source dataset: 
+  http://www.geobase.ca/geobase/en/data/nrn/description.html
+
+Last checked: 2010-10-21.
