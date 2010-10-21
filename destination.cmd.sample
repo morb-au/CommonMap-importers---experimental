@@ -1,0 +1,16 @@
+REM  Yes this is a Windows command file.
+
+REM  Called by '3.cm-convert-simpleosmosis-postgres-to-osmchange.cmd'
+REM  for destination database connection details.
+
+REM  README: Copy this sample file to '../connect/destination.cmd' and adjust the
+REM  variables below for your local situation.
+REM  (The database name, user and password must match
+REM   those in the corresponding 'destination.pl' file.)
+
+SET OSMOSIS_DIRECTORY=your_path_to_osmosis_here
+SET DATABASE_DESTINATION="your_destination_database_name_here"
+SET USER_DESTINATION="your_destination_database_username_here"
+SET PASSWORD_DESTINATION="your_destination_database_password_here"
+
+REM Ends.
