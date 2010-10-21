@@ -4,6 +4,11 @@
 # from the PostGIS format understood by ogr2ogr, 
 # to the PostgreSQL simple schema format understood by osmosis
 
+# Note:
+#   Run it with the nickname of your source schema
+#   as your command line parameter, e.g. "ca.nrn"
+#   for the Canadian National Road Network.
+
 # Brendan Morley, 2009-12-30
 
 # In the spirit of the CC BY licence used by CommonMap, this script is
@@ -32,7 +37,7 @@ use Math::Trig;
 require '../connect/source.pl';
 require '../connect/destination.pl';
 
-require 'schema/'.$ARGV[0].'.pl';
+require 'schema/'.$ARGV[0].'/'.$ARGV[0].'.schema.pl';
 
 ##
 ## SETTINGS
