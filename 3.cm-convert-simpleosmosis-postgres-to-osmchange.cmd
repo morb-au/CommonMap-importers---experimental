@@ -6,10 +6,6 @@ REM  osmChange document,
 REM  suitable for using as the payload in an
 REM  API 'upload' REST call.
 
-REM  Run it with the nickname of your source schema
-REM  as your command line parameter, e.g. "ca.nrn"
-REM  for the Canadian National Road Network.
-
 REM  Don't forget to add a directory at '../for-upload'
 REM  for the osmosis results to be placed into.
 
