@@ -20,6 +20,13 @@
   #   the API.
   $commonmap_user_name = 'your_API_username_here';
 
+  # This is the user id in the API database that you intend to use for
+  #   bulk copies of PostgreSQL data into the API.  You will have to
+  #   ask your API administrator for this number as it typically is not
+  #   revealed through the API itself.
+  # If unsure, just leave at -1.
+  $commonmap_user_id = -1;
+
   ## Connection string - see DBD::Pg DBI connect() documentation for string format
 
   # Connection details for destination database (osmosis Simple Schema format)
