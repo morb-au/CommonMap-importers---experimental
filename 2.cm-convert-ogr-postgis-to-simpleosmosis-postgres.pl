@@ -34,7 +34,7 @@
 use DBI;
 use Math::Trig;
 
-require '../connect/source.pl';
+require '../connect/origin.pl';
 require '../connect/destination.pl';
 
 require 'schema/'.$ARGV[0].'/'.$ARGV[0].'.schema.pl';
