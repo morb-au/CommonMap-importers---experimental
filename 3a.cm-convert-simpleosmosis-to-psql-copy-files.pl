@@ -706,7 +706,17 @@ require '../connect/destination.pl';
   print '  $new_hw_id_way       = $hw_id_way       = '.($new_hw_id_way+($hw_id_increment_by)).";\n";
   print '  $new_hw_id_relation  = $hw_id_relation  = '.($new_hw_id_relation+($hw_id_increment_by)).";\n";
 
+  print "\n";
+  print "Also,\n";
+  print "Take:\n\n";
+  print "  $psql_copy_path/cm.$hw_id_changeset.bz2\n\n";
+  print "and copy it to the following path on the API database (db-core) server:\n\n";
+  print "  /tmp/commonmap/bulk-uploads/\n\n";
+  print "The API database server will take care of the next step.\n";
+  print "\n";
   
+
+  print "Updating $next_ids_file...\n";
   open(NEXT, '>>'.$next_ids_file);
 
   print NEXT "\n# New next-IDs created as a result of a run at ".localtime()."\n";
@@ -721,6 +731,8 @@ require '../connect/destination.pl';
   print NEXT "#\n\n";
   
   close(NEXT);
+  
+  print "All done.\n";
   
 ##
 ## ENDS
