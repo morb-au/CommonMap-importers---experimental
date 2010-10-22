@@ -1,0 +1,11 @@
+
+Natural Earth
+-------------
+
+Get your ne files from: 
+  TBA
+
+Description of the source dataset: 
+  TBA
+
+Last checked: 2010-10-22.
