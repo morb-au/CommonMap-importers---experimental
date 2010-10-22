@@ -34,6 +34,7 @@
 
 use Math::BigFloat;
 use DBI;
+use Encode;
 
 require '../connect/destination.pl';
 
@@ -83,7 +84,20 @@ require '../connect/destination.pl';
   sub escape_tsv_text
   {
     my($text) = @_;
-    
+
+    # Take the opportunity to enforce UTF-8 encoding
+    # since the destination OSM/CM API database expects it;
+    # Even though the source database is also UTF-8
+    # for some reason my version of DBD-Pg downgrades it
+    # to LATIN1 on a fetchrow_hashref etc.
+    #
+    # This hack will get us through, say, French characters
+    # but will likely break completely when we want to import
+    # Asian texts, etc.
+    #
+    # TODO: See if a different version of DBD-Pg fixes the downgrade.
+    $text = encode("UTF-8", $text);
+
 #    $text =~ s/\"/\\\"/g;  # escape quotes
 #    $text =~ s/\,/\\\,/g;  # escape commas
     
@@ -377,7 +391,7 @@ require '../connect/destination.pl';
       my($dest_id)   = $hw_id_way + ($ref->{'way_id'} * -($hw_id_increment_by));
       my($k)         = escape_tsv_text($ref->{'k'});
       my($v)         = escape_tsv_text($ref->{'v'});
-                  
+
       print CURRENT_WAY_TAGS
         join("\t",
           $dest_id,
@@ -647,6 +661,7 @@ require '../connect/destination.pl';
                                       $user_simpleosmosis, 
                                       $password_simpleosmosis, 
       {
+        pg_enable_utf8 => 1,
         RaiseError => 1, 
         AutoCommit => 0,
         ChopBlanks => 1
