@@ -61,7 +61,7 @@ require 'schema/'.$ARGV[0].'/'.$ARGV[0].'.schema.pl';
 # experimental value for the "3a" script
   $osmapi_changeset_chunk_size  = 100000000;   # Maximum elements per changeset
 # Maximum elements per changeset - debugging sample
-$osmapi_changeset_chunk_size  = 10000;
+#$osmapi_changeset_chunk_size  = 10000;
 
 
   ## PostgreSQL API memory limit heuristics
@@ -697,7 +697,7 @@ $hashref_tags_rhs->{'test'} = 'to-right';
             # check it for smoothness though
             if (($measured_length_0
                    - $measured_length_last_node)
-                > 5)  # heuristic
+                > 3)  # heuristic
 #                 > 50)  # debugging - make it obvious
             {
               $offsetted_wkb = WKB_Point_From_XY($coords_lhs_x[$i], $coords_lhs_y[$i]);
@@ -815,7 +815,7 @@ $hashref_tags_rhs->{'test'} = 'to-right';
             # check it for smoothness though
             if (($measured_length_0
                    - $measured_length_last_node)
-                > 5)  # heuristic
+                > 3)  # heuristic
 #                 > 50)  # debugging - make it obvious
             {
               $offsetted_wkb = WKB_Point_From_XY($coords_rhs_x[$i], $coords_rhs_y[$i]);
@@ -1884,7 +1884,7 @@ print "\n\n Relation_Members_Insert: @_ \n";
                'NumPoints(wkb_geometry) as numpoints_geometry, '.
                'Case '.
                  "When GeometryType(wkb_geometry)='POLYGON' Then NumPoints(ExteriorRing(wkb_geometry)) ".
-                 'Else 0'.
+                 'Else 0 '.
                'End '.
                'as numpoints_extring, '.     ##### TODO: Do not test for this if not a polygon
 #               'CASE WHEN '.
@@ -1902,7 +1902,7 @@ print "\n\n Relation_Members_Insert: @_ \n";
 ##               'AsText(wkb_geometry) as wkt_geometry, '.
 ###               'Transform(SetSRID(wkb_geometry, 4283), 4326) as srid_geometry '.  ####################### Assume GDA94 -> WGS84
                'SetSRID(wkb_geometry, 4326) as srid_geometry '.  ####################### Assume GDA94 -> WGS84
-        'FROM '.$table_name.' '.
+        'FROM "'.$table_name.'" '.
         'ORDER BY ogc_fid '.  # provide deterministic offsetting between executions of this query
         'LIMIT '.$osmapi_changeset_chunk_size.' '.  # will never need more than this at a time.
         'OFFSET '.$start_origin_from_row
@@ -1960,7 +1960,7 @@ print "\n\n Relation_Members_Insert: @_ \n";
                                    'generate_series(1, NPoints(wkb_geometry))), 4326) as srid_point '.
               'FROM '.
                      '(SELECT '.$affine.' as wkb_geometry '.
-                       'FROM '.$table_name.' '.
+                       'FROM "'.$table_name.'" '.
                       'WHERE ogc_fid = ?'.
                      ') as source'
               ) or die "Can't prepare statement: $DBI::errstr";
@@ -2244,7 +2244,7 @@ print "into address relation '".$addr_relation_id."' \n";
                                      ' 4326) as srid_point '.
               'FROM '.
                      '(SELECT GeometryN('.$affine.', ?) as wkb_sub_geometry '.
-                       'FROM '.$table_name.' '.
+                       'FROM "'.$table_name.'" '.
                       'WHERE ogc_fid = ?'.
                      ') as source'
               ) or die "Can't prepare statement: $DBI::errstr";
@@ -2309,7 +2309,7 @@ print "into address relation '".$addr_relation_id."' \n";
                                    'generate_series(?::int, ?::int)), 4326) as srid_point '.
               'FROM '.
                      '(SELECT ExteriorRing('.$affine.') as wkb_extring_geometry '.
-                       'FROM '.$table_name.' '.
+                       'FROM "'.$table_name.'" '.
                       'WHERE ogc_fid = ?'.
                      ') as source'
               ) or die "Can't prepare statement: $DBI::errstr";
@@ -2404,7 +2404,7 @@ print "into address relation '".$addr_relation_id."' \n";
                                    'generate_series(?::int, ?::int)), 4326) as srid_point '.
               'FROM '.
                      '(SELECT InteriorRingN('.$affine.', ?) as wkb_intring_geometry '.
-                       'FROM '.$table_name.' '.
+                       'FROM "'.$table_name.'" '.
                       'WHERE ogc_fid = ?'.
                      ') as source'
               ) or die "Can't prepare statement: $DBI::errstr";
@@ -2417,7 +2417,7 @@ print "into address relation '".$addr_relation_id."' \n";
             $dbh_origin->prepare(
               'SELECT '.
                     'NumPoints(InteriorRingN(wkb_geometry, ?)) as numpoints_intring '.
-                       'FROM '.$table_name.' '.
+                       'FROM "'.$table_name.'" '.
                       'WHERE ogc_fid = ?'
               ) or die "Can't prepare statement: $DBI::errstr";
         } 
@@ -2530,7 +2530,7 @@ print "\nPolygon Interior Rings: ".$hashref->{'num_intrings'}."\n\n";
                       'NumPoints(ExteriorRing('.
                          'ST_GeometryN(wkb_geometry, ?)'.
                        ')) as numpoints_extring '.
-                         'FROM '.$table_name.' '.
+                         'FROM "'.$table_name.'" '.
                         'WHERE ogc_fid = ?'
                 ) or die "Can't prepare statement: $DBI::errstr";
           }
@@ -2566,7 +2566,7 @@ print "\nPolygon Interior Rings: ".$hashref->{'num_intrings'}."\n\n";
                        '(SELECT ExteriorRing('.
                          'ST_GeometryN(wkb_geometry, ?)'.
                        ') as wkb_extring_geometry '.
-                         'FROM '.$table_name.' '.
+                         'FROM "'.$table_name.'" '.
                         'WHERE ogc_fid = ?'.
                        ') as source'
                 ) or die "Can't prepare statement: $DBI::errstr";
@@ -2662,7 +2662,7 @@ print "Multipolygon Relation ID = $multipolygon_relation_id\n";
                        '(SELECT InteriorRingN('.
                            'ST_GeometryN(wkb_geometry, ?)'.
                          ', ?) as wkb_intring_geometry '.
-                         'FROM '.$table_name.' '.
+                         'FROM "'.$table_name.'" '.
                         'WHERE ogc_fid = ?'.
                        ') as source'
                 ) or die "Can't prepare statement: $DBI::errstr";
@@ -2677,7 +2677,7 @@ print "Multipolygon Relation ID = $multipolygon_relation_id\n";
                       'NumPoints(InteriorRingN('.
                          'ST_GeometryN(wkb_geometry, ?)'.
                        ', ?)) as numpoints_intring '.
-                         'FROM '.$table_name.' '.
+                         'FROM "'.$table_name.'" '.
                         'WHERE ogc_fid = ?'
                 ) or die "Can't prepare statement: $DBI::errstr";
           } 
