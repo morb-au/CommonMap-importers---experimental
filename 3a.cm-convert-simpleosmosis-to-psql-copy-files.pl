@@ -32,7 +32,7 @@
 ## INCLUDES
 ##
 
-#use Math::BigFloat;
+use Math::BigFloat;
 use DBI;
 
 require '../connect/destination.pl';
@@ -687,8 +687,11 @@ require '../connect/destination.pl';
   &generate_changeset;
   
 
-  # BZip2 them all up  
-  system '"'.$ENV{PATH_TO_TAR}.'"'." -jcvf $psql_copy_path/cm.$hw_id_changeset.bz2 $psql_copy_path/*";
+  # BZip2 them all up
+  print "Creating BZip2 archive for upload to API server...\n";
+  my($bzip2_cmd) = '"'.$ENV{PATH_TO_TAR}.'"'." -jcvf $psql_copy_path/cm.$hw_id_changeset.bz2 $psql_copy_path/*";
+  print "> $bzip2_cmd\n";
+  system $bzip2_cmd;
 
 
   print "Disconnecting from database...\n";
