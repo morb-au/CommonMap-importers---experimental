@@ -11,6 +11,9 @@ REM  for the Canadian National Road Network.
 REM  Get environment variables for this import chain
 CALL schema/%1/%1.source.cmd
 
+REM  Get origin dataset path details for this import chain
+CALL ../connect/schema/origin.%1.cmd
+
 REM  Get parameters for the PostgreSQL database
 CALL ../connect/origin.cmd
 

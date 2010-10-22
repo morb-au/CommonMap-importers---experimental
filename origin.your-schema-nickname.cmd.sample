@@ -1,0 +1,16 @@
+REM  Yes this is a Windows command file.
+
+REM  Called by '1.cm-convert-source-to-ogr-postgis.cmd'
+REM  for origin dataset path details.
+
+REM  This variant is specific to:
+REM    your_source_geodata_name_here (c. 20xx)
+
+
+REM  README: Copy this sample file to
+REM    '../connect/schema/origin.(your schema nickname).cmd' and adjust the
+REM  variables below for your local situation.
+
+SET SOURCE_DIRECTORY=your_source_directory_of_source_geodata_here
+
+REM Ends.

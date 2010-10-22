@@ -9,7 +9,6 @@ REM  (The database name, user and password must match
 REM   those in the corresponding 'origin.pl' file.)
 
 SET OGR_DIRECTORY=your_path_to_ogr2ogr_here
-SET SOURCE_DIRECTORY=your_source_directory_of_source_geodata_here
 SET CONNECTION_ORIGIN="dbname=your_origin_database_name_here user=your_origin_database_username_here password=your_origin_database_password_here"
 
 SET PATH_TO_TAR=your_path_to_the_tar_binary_here
