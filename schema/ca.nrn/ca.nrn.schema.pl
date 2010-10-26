@@ -27,7 +27,7 @@
   #  copy the value to a destination key named on the Right-Hand Side.
   #
   #  Note:
-  #  The value will be modified (not just copied) if the RHS here is also
+  #  The value will be modified (not just copied) if the LHS here is also
   #  listed in the LHS of %{ $attribute_translate{}{} } futher below.
   #
   %attributes_origin = (
@@ -79,7 +79,7 @@
 
    
   ## A series of attribute value translations 
-  # Left-Hand Side = attribute name as specified in the RHS of %attributes_origin further above,
+  # Left-Hand Side = attribute name as specified in the source table,
   #                  and its value to match for its corresponding RHS here
   #                  to be substituted instead.
   # Right-Hand Side = tags/value pairs to use for the substitution into the destination.

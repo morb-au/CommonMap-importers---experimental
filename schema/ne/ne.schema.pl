@@ -18,7 +18,8 @@
 
   ## Tables in the origin database (ogr PostGIS format) to scan
   @tables_origin = (
-    '10m_land'
+    '10m_admin_0_countries',
+#    '10m_land'
     );
 
 
@@ -27,14 +28,15 @@
   #  copy the value to a destination key named on the Right-Hand Side.
   #
   #  Note:
-  #  The value will be modified (not just copied) if the RHS here is also
+  #  The value will be modified (not just copied) if the LHS here is also
   #  listed in the LHS of %{ $attribute_translate{}{} } futher below.
   #
   %attributes_origin = (
      'ogc_fid'             => 'ne:fid',
+     'country'             => 'name',
      
      # these ones are just for passthrough to %{$attribute_translate} below.
-     'featurecla'          => 'class',
+     'featurecla'          => 'featurecla',
 
     );
    
@@ -56,7 +58,7 @@
 
    
   ## A series of attribute value translations 
-  # Left-Hand Side = attribute name as specified in the RHS of %attributes_origin further above,
+  # Left-Hand Side = attribute name as specified in the source table,
   #                  and its value to match for its corresponding RHS here
   #                  to be substituted instead.
   # Right-Hand Side = tags/value pairs to use for the substitution into the destination.
@@ -67,7 +69,10 @@
   #  Otherwise it will not be copied from source to
   #  destination at all.
 
-  %{ $attribute_translate{'class'}{'Land'} }                      = ( 'natural'   => 'land' );
+  %{ $attribute_translate{'featurecla'}{'Land'} }                      = ( 'natural'     => 'land' );
+
+  %{ $attribute_translate{'featurecla'}{'Admin-0 map-subunits'} }      = ( 'boundary'    => 'administrative',
+                                                                            'admin_level' => '2' );
 
 
   ## static tags in the destination, to always be applied.

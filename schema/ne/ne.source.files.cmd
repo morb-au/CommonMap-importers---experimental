@@ -7,4 +7,6 @@ REM  provider (typically a Mapping Agency).
 REM  This variant is specific to:
 REM    Natural Earth (c. 2010)
 
-"%OGR_DIRECTORY%\ogr2ogr" -skipfailures -overwrite -f PostgreSQL PG:%CONNECTION_ORIGIN% "%SOURCE_DIRECTORY%\10m_physical\10m_land.shp"
+"%OGR_DIRECTORY%\ogr2ogr" -skipfailures -overwrite -nlt GEOMETRY -f PostgreSQL PG:%CONNECTION_ORIGIN% "%SOURCE_DIRECTORY%\10m_cultural\10m_admin_0_countries.shp"
+
+"%OGR_DIRECTORY%\ogr2ogr" -skipfailures -overwrite -nlt GEOMETRY -f PostgreSQL PG:%CONNECTION_ORIGIN% "%SOURCE_DIRECTORY%\10m_physical\10m_land.shp"

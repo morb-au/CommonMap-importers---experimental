@@ -61,13 +61,20 @@ require 'schema/'.$ARGV[0].'/'.$ARGV[0].'.schema.pl';
 # experimental value for the "3a" script
   $osmapi_changeset_chunk_size  = 100000000;   # Maximum elements per changeset
 # Maximum elements per changeset - debugging sample
-#$osmapi_changeset_chunk_size  = 10000;
+#$osmapi_changeset_chunk_size  = 100;
 
 
   ## PostgreSQL API memory limit heuristics
+  ## Note: These are tuned for a machine with 512MB
+  ##       available memory. We assume you can tune
+  ##       this _proportionally_ to the amount of available
+  ##       memory on your system.
 
   # Maximum items in a generate_series(low, high)
-  $pgsql_series_chunk_size      =  200;
+  $pgsql_series_chunk_size      =   200;
+
+  # Maximum rows to fetch from the database at a time
+  $pgsql_batch_limit_rows       = 10000;
 
 
   ## Cartographic representation of addressing
@@ -86,7 +93,8 @@ require 'schema/'.$ARGV[0].'/'.$ARGV[0].'.schema.pl';
   #    at right angle intersections)
   $address_pullback = $address_distance * 2.0;
 
-
+  # Allows passthrough of multipolygon relation types.
+  $attributes_origin{'type'} = 'type';
 
 
 ##
@@ -1227,7 +1235,7 @@ print "\n\n Relation_Members_Insert: @_ \n";
  
     my($way_seq) = 0;
     
-    print "\nAt Large Polygon Relation ID $relation_id: Way IDs are: ".join(', ', @way_ids).".";
+    print "\nAt Large Polygon Relation ID $multipolygon_relation_id: Way IDs are: ".join(', ', @way_ids).".";
     
     foreach $way_id (@way_ids)
     { 
@@ -1249,6 +1257,12 @@ print "\n\n Relation_Members_Insert: @_ \n";
   } # sub Large_Polygon_Insert
 
 
+  # This will determine if a key already exists for a node,
+  # and if so, merges the existing value with the new value
+  # offered to this sub.  Returns the combined value.
+  # Note: This merge sub is only available for Nodes as they are
+  #       the only elements where we test for duplicate
+  #       coordinates.  
   sub Node_Tag_Prepare_Merge
   {
     my($node_id, $k, $v) = @_;
@@ -1314,7 +1328,7 @@ print "\n\n Relation_Members_Insert: @_ \n";
 
   sub Node_Tags_Insert
   {
-    my($tags, $node_id) = @_;
+    my($tags, $node_id, $source_table) = @_;
   
     if (!$sth_destination_node_tag)
     {
@@ -1359,6 +1373,29 @@ print "\n\n Relation_Members_Insert: @_ \n";
     
     }
 
+    # Apply any per-table attribute tattoos
+    if ( exists $attributes_tattoo_table{$source_table} )
+    {
+      foreach $tag_key ( keys (%{ $attributes_tattoo_table{$source_table} }) )
+      {
+        my ($v) = Node_Tag_Prepare_Merge(
+                    $node_id,
+                    $tag_key,
+                    $attributes_tattoo_table{$source_table}{$tag_key}
+                  );  
+
+        my $rc = $sth_destination_node_tag->execute
+          (
+            $node_id,
+            $tag_key,
+            $v
+          ) 
+          or die "Can't execute statement: $DBI::errstr";
+      
+      }
+    }  
+
+    
 
     # Add tags to the node according to the translation mapping between
     # the attribute names in the origin database and the key names we want
@@ -1452,7 +1489,7 @@ print "\n\n Relation_Members_Insert: @_ \n";
   # Very similar to Node_Tags_Insert, except for ways
   sub Way_Tags_Insert
   {
-    my($tags, $way_id) = @_;
+    my($tags, $way_id, $source_table) = @_;
   
     if (!$sth_destination_way_tag)
     {
@@ -1490,6 +1527,25 @@ print "\n\n Relation_Members_Insert: @_ \n";
     
     }
     
+    # Apply any per-table attribute tattoos
+    if ( exists $attributes_tattoo_table{$source_table} )
+    {
+      foreach $tag_key ( keys (%{ $attributes_tattoo_table{$source_table} }) )
+      {
+#          print "WANT TO ADD: ".$tag_key." = ".
+#                 $attributes_tattoo_table{$source_table}{$tag_key}.
+#                 ".\n";
+#          sleep 10;
+        my $rc = $sth_destination_way_tag->execute
+          (
+            $way_id,
+            $tag_key,
+            $attributes_tattoo_table{$source_table}{$tag_key}
+          ) 
+          or die "Can't execute statement: $DBI::errstr";
+      }
+    }  
+
     
     # Add tags to the node according to the translation mapping between
     # the attribute names in the origin database and the key names we want
@@ -1580,7 +1636,7 @@ print "\n\n Relation_Members_Insert: @_ \n";
 
   
   
-  # Very similar to Node_Tags_Insert, except for large polygons
+  # Very similar to Node_Tags_Insert, except for large polygons etc
   sub Relation_Tags_Insert
   {
     my($tags, $relation_id) = @_;
@@ -1614,7 +1670,7 @@ print "\n\n Relation_Members_Insert: @_ \n";
     
     foreach $attribute_name (keys %{$tags})
     {
-    
+#print __LINE__.": Testing tag with key '$attribute_name'...\n";
       my($v0) = undef;
     
       # Test for simple substitution of the attribute name
@@ -1623,8 +1679,10 @@ print "\n\n Relation_Members_Insert: @_ \n";
            ( $tags->{$attribute_name} )
          )
       {
+#print __LINE__.": Found '$attribute_name' in origin mapping ...\n";
         $v0 = $tags->{$attribute_name};
         $attribute_name = $attributes_origin{$attribute_name};
+#print __LINE__.": v0 is '$v0' in origin mapping ...\n";
 
 #        my $rc = $sth_destination_relation_tag->execute
 #          (
@@ -1660,6 +1718,7 @@ print "\n\n Relation_Members_Insert: @_ \n";
       }  
       elsif (defined $v0)
       {
+#print __LINE__.": applying v0='$v0' to destination relation tag mapping ...\n";
         my $rc = $sth_destination_relation_tag->execute
           (
             $relation_id,
@@ -1722,7 +1781,8 @@ print "\n\n Relation_Members_Insert: @_ \n";
     my( $type, 
         $multipolygon_relation_id,
         $multipolygon_relation_role,
-        $tags, 
+        $tags,
+        $source_table,
         @node_ids ) = @_;
 
     # Do a fixup for cliffs, embankments, etc,
@@ -1752,7 +1812,7 @@ print "\n\n Relation_Members_Insert: @_ \n";
       # onto each slice.
       foreach $way_id (@way_ids)
       {
-        Way_Tags_Insert( $tags, $way_id );
+        Way_Tags_Insert( $tags, $way_id, $source_table );
       }
     }
     
@@ -1776,7 +1836,6 @@ print "\n\n Relation_Members_Insert: @_ \n";
         {
           $multipolygon_relation_role = 'outer';
         }
-      
         $multipolygon_relation_id = Large_Polygon_Insert($multipolygon_relation_id,
                                                          $multipolygon_relation_role,
                                                          @way_ids);
@@ -1792,11 +1851,10 @@ print "\n\n Relation_Members_Insert: @_ \n";
         # Area did not have over 2000 nodes,
         # Insert in simplified form
                 
-        Way_Tags_Insert( $tags, $way_ids[0] );
+        Way_Tags_Insert( $tags, $way_ids[0], $source_table );
       }  
 
     }
-    
     return ($multipolygon_relation_id, @way_ids);
     
   } # sub Way_and_Tags_Insert
@@ -1874,688 +1932,483 @@ print "\n\n Relation_Members_Insert: @_ \n";
       # know the alternative start row now.
       $start_origin_from_row = 0;
     }
-    
-    my $sth_origin = 
-      $dbh_origin->prepare(
-        'SELECT *, '.
-               'GeometryType(wkb_geometry) as type_geometry, '.
-               'NumGeometries(wkb_geometry) as num_geometries, '.
-               'NumInteriorRings(wkb_geometry) as num_intrings, '.
-               'NumPoints(wkb_geometry) as numpoints_geometry, '.
-               'Case '.
-                 "When GeometryType(wkb_geometry)='POLYGON' Then NumPoints(ExteriorRing(wkb_geometry)) ".
-                 'Else 0 '.
-               'End '.
-               'as numpoints_extring, '.     ##### TODO: Do not test for this if not a polygon
-#               'CASE WHEN '.
-#                 "GeometryType(wkb_geometry) = 'POLYGON' ".
-#                 'THEN ExteriorRing(wkb_geometry) '.
-#                 'ELSE NULL '.
-#                 'END '.  
-#                 ' as wkb_extring_geometry, '.
-##               'CASE WHEN '.
-##                 "GeometryType(wkb_geometry) = 'POLYGON' ".
-##                 'THEN AsText(ExteriorRing(wkb_geometry)) '.
-##                 'ELSE NULL '.
-##                 'END '.  
-##                 ' as wkt_extring_geometry, '.
-##               'AsText(wkb_geometry) as wkt_geometry, '.
-###               'Transform(SetSRID(wkb_geometry, 4283), 4326) as srid_geometry '.  ####################### Assume GDA94 -> WGS84
-               'SetSRID(wkb_geometry, 4326) as srid_geometry '.  ####################### Assume GDA94 -> WGS84
-        'FROM "'.$table_name.'" '.
-        'ORDER BY ogc_fid '.  # provide deterministic offsetting between executions of this query
-        'LIMIT '.$osmapi_changeset_chunk_size.' '.  # will never need more than this at a time.
-        'OFFSET '.$start_origin_from_row
-        ) or die "Can't prepare statement: $DBI::errstr";
 
-    my $rc = $sth_origin->execute
-      or die "Can't execute statement: $DBI::errstr";
+#print "At line ".__LINE__.".\n";
 
-    print "Query start at row $start_origin_from_row.\n";
-    print "Query will return $sth_origin->{NUM_OF_FIELDS} fields.\n";
-    print "Field names: @{ $sth_origin->{NAME} }\n\n";
-
-#    my($origin_row_number) = $start_origin_from_row;
-    $origin_row_number = $start_origin_from_row;
-    
-    while (my $hashref = $sth_origin->fetchrow_hashref)
+    #
+    ## Run a batch of rows fetched from the database
+    #
+    do
     {
-#      # Print out row contents for debugging purposes
-#      foreach $column_name (sort keys %{$hashref})
-#      {
-#        my($column_value) = $hashref->{$column_name};
-#        
-#        print "  Column name: '$column_name'\n";
-#        print "    Column value: '$column_value'\n";
-#        
-#      }
+      # The batch size is limited by either
+      # the amount of rows we want to fetch from
+      # the source database at a time; or
+      # the amount of elements we want to submit
+      # in an upload request to the CM/OSM API.
+      print "** Batch limit is $pgsql_batch_limit_rows.\n";
+      
+      my($osmapi_changeset_chunk_size_remaining) =
+        $osmapi_changeset_chunk_size - $changeset_element_count;
 
-      print "\nRead id ".$hashref->{'ogc_fid'}." from source.\n";
-      print "Geometry type ".$hashref->{'type_geometry'}.
-                     " with ".$hashref->{'numpoints_geometry'}." points in linestring".
-                     " or ".$hashref->{'numpoints_extring'}." points in exterior ring.\n";
-      
+      print "** Remaining changeset maximum size is $osmapi_changeset_chunk_size_remaining.\n";
 
-#      ##### TODO: This is a hack - need to handle large polygons without the pgsql server running out of memory
-#      if ($hashref->{'numpoints_extring'} > $osmapi_way_chunk_size)
-#      {
-#        print "\n\nWARNING - TOO MANY NODES, SKIPPING.\n\n";
-#        next;
-#      }
-        
-      
-      $dbh_destination->begin_work();
-      
-      # Extract points of linestring
-      if ($hashref->{'type_geometry'} eq 'LINESTRING')
+      my($sql_batch_size) = $pgsql_batch_limit_rows;
+      if ($sql_batch_limit > $osmapi_changeset_chunk_size_remaining)
       {
+        # will never need more than this at a time.
+        print "**   ... which is less than the batch limit.\n";
+        $sql_batch_limit = $osmapi_changeset_chunk_size_remaining;
+      }
       
-        ############ TODO: OPTIMISE THIS PREPARED STATEMENT
-        if (!$sth_origin_linestring_points{$table_name})
+      print "** Fetching our batch of up to $sql_batch_size rows ".  
+                "from row $start_origin_from_row.\n\n";
+    
+      my $sth_origin = 
+        $dbh_origin->prepare(
+          'SELECT *, '.
+                 'GeometryType(wkb_geometry) as type_geometry, '.
+                 'NumGeometries(wkb_geometry) as num_geometries, '.
+                 'NumInteriorRings(wkb_geometry) as num_intrings, '.
+                 'NumPoints(wkb_geometry) as numpoints_geometry, '.
+                 'Case '.
+                   "When GeometryType(wkb_geometry)='POLYGON' Then NumPoints(ExteriorRing(wkb_geometry)) ".
+                   'Else 0 '.
+                 'End '.
+                 'as numpoints_extring, '.     ##### TODO: Do not test for this if not a polygon
+  #               'CASE WHEN '.
+  #                 "GeometryType(wkb_geometry) = 'POLYGON' ".
+  #                 'THEN ExteriorRing(wkb_geometry) '.
+  #                 'ELSE NULL '.
+  #                 'END '.  
+  #                 ' as wkb_extring_geometry, '.
+  ##               'CASE WHEN '.
+  ##                 "GeometryType(wkb_geometry) = 'POLYGON' ".
+  ##                 'THEN AsText(ExteriorRing(wkb_geometry)) '.
+  ##                 'ELSE NULL '.
+  ##                 'END '.  
+  ##                 ' as wkt_extring_geometry, '.
+  ##               'AsText(wkb_geometry) as wkt_geometry, '.
+  ###               'Transform(SetSRID(wkb_geometry, 4283), 4326) as srid_geometry '.  ####################### Assume GDA94 -> WGS84
+                 'SetSRID(wkb_geometry, 4326) as srid_geometry '.  ####################### Assume GDA94 -> WGS84
+          'FROM "'.$table_name.'" '.
+          'ORDER BY ogc_fid '.  # provide deterministic offsetting between executions of this query
+          'LIMIT '.$sql_batch_size.' '.  
+          'OFFSET '.$start_origin_from_row
+          ) or die "Can't prepare statement: $DBI::errstr";
+
+  #print "At line ".__LINE__.".\n";
+
+      my $rc = $sth_origin->execute
+        or die "Can't execute statement: $DBI::errstr";
+
+  #print "At line ".__LINE__.".\n";
+
+      print "Query start at row $start_origin_from_row.\n";
+      print "Query will return $sth_origin->{NUM_OF_FIELDS} fields.\n";
+      print "Field names: @{ $sth_origin->{NAME} }\n\n";
+
+  #    my($origin_row_number) = $start_origin_from_row;
+      $origin_row_number = $start_origin_from_row;
+      
+      while (my $hashref = $sth_origin->fetchrow_hashref)
+      {
+  #      # Print out row contents for debugging purposes
+  #      foreach $column_name (sort keys %{$hashref})
+  #      {
+  #        my($column_value) = $hashref->{$column_name};
+  #        
+  #        print "  Column name: '$column_name'\n";
+  #        print "    Column value: '$column_value'\n";
+  #        
+  #      }
+
+        print "\nRead id ".$hashref->{'ogc_fid'}." from source.\n";
+        print "Geometry type ".$hashref->{'type_geometry'}.
+                       " with ".$hashref->{'numpoints_geometry'}." points in linestring".
+                       " or ".$hashref->{'numpoints_extring'}." points in exterior ring.\n";
+        
+
+  #      ##### TODO: This is a hack - need to handle large polygons without the pgsql server running out of memory
+  #      if ($hashref->{'numpoints_extring'} > $osmapi_way_chunk_size)
+  #      {
+  #        print "\n\nWARNING - TOO MANY NODES, SKIPPING.\n\n";
+  #        next;
+  #      }
+          
+        
+        $dbh_destination->begin_work();
+        
+        # Extract points of linestring
+        if ($hashref->{'type_geometry'} eq 'LINESTRING')
         {
-          $sth_origin_linestring_points{$table_name} = 
-            $dbh_origin->prepare(
-              'SELECT '.
-                    'SetSRID(PointN(wkb_geometry, '.
-                                   'generate_series(1, NPoints(wkb_geometry))), 4326) as srid_point '.
-              'FROM '.
-                     '(SELECT '.$affine.' as wkb_geometry '.
-                       'FROM "'.$table_name.'" '.
-                      'WHERE ogc_fid = ?'.
-                     ') as source'
-              ) or die "Can't prepare statement: $DBI::errstr";
-        }      
-            
-        my $rc = $sth_origin_linestring_points{$table_name}->execute( $hashref->{'ogc_fid'} ) 
-          or die "Can't execute statement: $DBI::errstr";
-
-#        print "LineString Query will return $sth_origin_linestring_points{$table_name}->{NUM_OF_FIELDS} fields.\n";
-#        print "Field names: @{ $sth_origin_linestring_points{$table_name}->{NAME} }\n\n";
-
-
-        my(@node_ids) = ();
-        my(@node_wkbs) = ();
-
-        while (my $hashref_points = $sth_origin_linestring_points{$table_name}->fetchrow_hashref)
-        {
-          # Print out row contents for debugging purposes
-          foreach $column_name (sort keys %{$hashref_points})
+        
+          ############ TODO: OPTIMISE THIS PREPARED STATEMENT
+          if (!$sth_origin_linestring_points{$table_name})
           {
-            my($column_value) = $hashref_points->{$column_name};
-          
-#            print "  Column name: '$column_name'\n";
-#            print "    Column value: '$column_value'\n";
-        
-        
-          }
-          
-          my($node_id) = Node_Insert( $hashref_points->{'srid_point'} );
-          
-          push(@node_ids,  $node_id);
-          push(@node_wkbs, $hashref_points->{'srid_point'} );
-        }  
-
-        # Create some offset lines for cartographic representation
-        #  of house numbers
-        
-        # First get the street number endpoints
-        my($from_left)  = $hashref->{ $street_number_attributes[0] };
-        my($from_right) = $hashref->{ $street_number_attributes[1] };
-        my($to_left)    = $hashref->{ $street_number_attributes[2] };
-        my($to_right)   = $hashref->{ $street_number_attributes[3] };
- 
-#        print "    From Left  = $from_left\n";
-#        print "    From Right = $from_right\n";
-#        print "    To Left    = $to_left\n";
-#        print "    To right   = $to_right\n";
-        
-        my($calc_lhs) = ($from_left != $street_number_nil_value)
-                         or
-                         ($to_left != $street_number_nil_value);
-
-        my($calc_rhs) = ($from_right != $street_number_nil_value)
-                         or
-                         ($to_right != $street_number_nil_value);
-
-        # Then get the interpolation cartographic lines.
-        # TODO: Indicate if these are needed, sometimes street numbers are "-1"
-        my ($offset_left_node_ids,
-            $offset_right_node_ids)
-            = Offset_Way($address_distance,
-                         $address_pullback,
-                         $calc_lhs,
-                         $calc_rhs,
-                         @node_wkbs);
-
-        # (We need to make sure that we have acquired all the Node IDs
-        #  we need at this point, in order to insert the way and its
-        #  associated address interpolation all at once)
-
-        # Then store those lines and
-        # the endpoints, if we have interpolation lines to store them on.
-        my($hashref_tags_addr_endpoint);
-        my($addr_relation_id) = undef;
-        
-        if ($#{$offset_left_node_ids} > 0)
-        {
-#          if (
-#              ($from_left != $street_number_nil_value)
-#              or
-#              ($to_left != $street_number_nil_value)
-#             ) 
-#          {
-
-            my($hashref_tags_addr_interpolate);
-            # odd or even?
-            if (
-                ($from_left % 2 == 0)
-                and
-                ($to_left % 2 == 0)
-               )
-            {
-              $hashref_tags_addr_interpolate->{'addr:interpolation'} = 'even';
-            }
-            elsif (
-                   ($from_left % 2 == 1)
-                   and
-                   ($to_left % 2 == 1)
-                  )
-            {
-              $hashref_tags_addr_interpolate->{'addr:interpolation'} = 'odd';
-            }
-            else
-            {
-              $hashref_tags_addr_interpolate->{'addr:interpolation'} = 'unknown';
-            }    
-            
-            $hashref_tags_addr_interpolate->{'addr:street'} =
-               $hashref_tags_addr_endpoint->{'addr:street'} =
-                   $hashref->{$street_number_attributes[4]};
-            
-            my($house_relation_id, @house_way_ids) =
-              Way_and_Tags_Insert('W', undef, undef, 
-                                 $hashref_tags_addr_interpolate, 
-                                 @{ $offset_left_node_ids  });
-                               
-#  print "\n\n\nWANT TO INSERT FROMLEFT $from_left AT NODE ".($offset_left_node_ids->[0])." !!!\n";
-            $hashref_tags_addr_endpoint->{'addr:housenumber'} = $from_left;
-            Node_Tags_Insert($hashref_tags_addr_endpoint, $offset_left_node_ids->[0]);
-          
-#  print "\nWANT TO INSERT TOLEFT $to_left AT NODE ".($offset_left_node_ids->[-1])." !!!\n";
-            $hashref_tags_addr_endpoint->{'addr:housenumber'} = $to_left;
-            Node_Tags_Insert($hashref_tags_addr_endpoint, $offset_left_node_ids->[-1]);
-            
-            if ($house_relation_id)
-            {
-              $addr_relation_id = 
-                Relation_Members_Insert($addr_relation_id,
-                                        'house',
-                                        'R',
-                                        $house_relation_id);
-            }
-            else
-            {
-              $addr_relation_id = 
-                Relation_Members_Insert($addr_relation_id,
-                                        'house',
-                                        'W',
-                                        @house_way_ids);
-            }                                
-#          }
-        }
-        
-        if ($#{$offset_right_node_ids} > 0)
-        {
-#          if (
-#              ($from_right != $street_number_nil_value)
-#              or
-#              ($to_right != $street_number_nil_value)
-#             ) 
-#          {
-
-            my($hashref_tags_addr_interpolate);
-            # odd or even?
-            if (
-                ($from_right % 2 == 0)
-                and
-                ($to_right % 2 == 0)
-               )
-            {
-              $hashref_tags_addr_interpolate->{'addr:interpolation'} = 'even';
-            }
-            elsif (
-                   ($from_right % 2 == 1)
-                   and
-                   ($to_right % 2 == 1)
-                  )
-            {
-              $hashref_tags_addr_interpolate->{'addr:interpolation'} = 'odd';
-            }
-            else
-            {
-              $hashref_tags_addr_interpolate->{'addr:interpolation'} = 'unknown';
-            }    
-            
-            $hashref_tags_addr_interpolate->{'addr:street'} =
-               $hashref_tags_addr_endpoint->{'addr:street'} =
-                   $hashref->{$street_number_attributes[5]};
-
-            my($house_relation_id, @house_way_ids) =
-              Way_and_Tags_Insert('W', undef, undef, 
-                                 $hashref_tags_addr_interpolate, 
-                                 @{ $offset_right_node_ids });
-
-#  print "\nWANT TO INSERT FROMRIGHT $from_right AT NODE ".($offset_right_node_ids->[0])." !!!\n";
-            $hashref_tags_addr_endpoint->{'addr:housenumber'} = $from_right;
-            Node_Tags_Insert($hashref_tags_addr_endpoint, $offset_right_node_ids->[0]);
-          
-#  print "\nWANT TO INSERT TORIGHT $to_right AT NODE ".($offset_right_node_ids->[-1])." !!!\n";
-            $hashref_tags_addr_endpoint->{'addr:housenumber'} = $to_right;
-            Node_Tags_Insert($hashref_tags_addr_endpoint, $offset_right_node_ids->[-1]);
-            
-            if ($house_relation_id)
-            {
-              $addr_relation_id = 
-                Relation_Members_Insert($addr_relation_id,
-                                        'house',
-                                        'R',
-                                        $house_relation_id);
-            }
-            else
-            {
-              $addr_relation_id = 
-                Relation_Members_Insert($addr_relation_id,
-                                        'house',
-                                        'W',
-                                        @house_way_ids);
-            }                                
-#          }
-        }
-
-
-        # Insert the Way itself.
-        my($street_relation_id, @street_way_ids) =
-#        my($way_id) = Way_Insert( @node_ids );
-#        Way_Tags_Insert( $hashref, $way_id );
-          Way_and_Tags_Insert('W', undef, undef, $hashref, @node_ids);
-          
-        # Transfer name of street to the name of the relation
-        my($hashref_tags_addr_relation);
-        $hashref_tags_addr_relation->{'name'} = $hashref->{$street_number_attributes[4]};
-        if (
-            $hashref->{$street_number_attributes[4]} ne
-            $hashref->{$street_number_attributes[5]}
-            )
-        {    
-          $hashref_tags_addr_relation->{'name'} .= ';'.$hashref->{$street_number_attributes[5]};
-        }
-        
-                             
-        # reference the street from the interpolation relation
-        if ($street_relation_id)
-        {
-          $addr_relation_id = 
-            Relation_Members_Insert($addr_relation_id,
-                                    'street',
-                                    'R',
-                                    $street_relation_id);
-        }
-        else
-        {
-          $addr_relation_id = 
-            Relation_Members_Insert($addr_relation_id,
-                                    'street',
-                                    'W',
-                                    @street_way_ids);
-        }                                
- 
-#print "\n\n\n\n '".join(',', keys (%{ $hashref }))."' \n\n\n\n";
-print "\n   Inserting '".$hashref_tags_addr_relation->{'name'}."' ";
-print "into address relation '".$addr_relation_id."' \n";
-        Relation_Tags_Insert($hashref_tags_addr_relation,
-                             $addr_relation_id);
-
-      } # if ($hashref->{'type_geometry'} eq 'LINESTRING')
-
-
-
-      # Extract points of multilinestring
-      if ($hashref->{'type_geometry'} eq 'MULTILINESTRING')
-      {
-        # Yes, sometimes you will get multilinestrings in GA data
-        # that has been split into mapsheet tiles.
-        # This is because there are linestrings that "spill over"
-        # the mapsheet boundary and then come back into the boundary
-        # later down the way.  GA will make these multilinestrings
-        # and the missing portion will show up in the adjoining mapsheet.
-        # 
-        # This import script will split up the multilinestring
-        # into separate ways and copy the tags across.
-      
-        ############ TODO: OPTIMISE THIS PREPARED STATEMENT
-        if (!$sth_origin_multilinestring_points{$table_name})
-        {
-          $sth_origin_multilinestring_points{$table_name} = 
-            $dbh_origin->prepare(
-              'SELECT '.
-                    'SetSRID(PointN(wkb_sub_geometry, '.
-                                   'generate_series(1, '.
-                                     'NPoints(wkb_sub_geometry))),'.
-                                     ' 4326) as srid_point '.
-              'FROM '.
-                     '(SELECT GeometryN('.$affine.', ?) as wkb_sub_geometry '.
-                       'FROM "'.$table_name.'" '.
-                      'WHERE ogc_fid = ?'.
-                     ') as source'
-              ) or die "Can't prepare statement: $DBI::errstr";
-        }      
-        
-        # Loop through the linestrings in the multilinestring
-        foreach $geom_index (1..$hashref->{'num_geometries'})
-        {
-          my $rc = $sth_origin_multilinestring_points{$table_name}->execute( $geom_index,
-                                                                             $hashref->{'ogc_fid'} ) 
+            $sth_origin_linestring_points{$table_name} = 
+              $dbh_origin->prepare(
+                'SELECT '.
+                      'SetSRID(PointN(wkb_geometry, '.
+                                     'generate_series(1, NPoints(wkb_geometry))), 4326) as srid_point '.
+                'FROM '.
+                       '(SELECT '.$affine.' as wkb_geometry '.
+                         'FROM "'.$table_name.'" '.
+                        'WHERE ogc_fid = ?'.
+                       ') as source'
+                ) or die "Can't prepare statement: $DBI::errstr";
+          }      
+              
+          my $rc = $sth_origin_linestring_points{$table_name}->execute( $hashref->{'ogc_fid'} ) 
             or die "Can't execute statement: $DBI::errstr";
 
-#          print "MultiLineString Query will return ".
-#                 "$sth_origin_linestring_points{$table_name}->{NUM_OF_FIELDS} fields.\n";
-#          print "Field names: @{ $sth_origin_linestring_points{$table_name}->{NAME} }\n\n";
-          print "MultiLineString Sub-geometry index: $geom_index\n\n";
+  #        print "LineString Query will return $sth_origin_linestring_points{$table_name}->{NUM_OF_FIELDS} fields.\n";
+  #        print "Field names: @{ $sth_origin_linestring_points{$table_name}->{NAME} }\n\n";
 
 
           my(@node_ids) = ();
+          my(@node_wkbs) = ();
 
-          while (my $hashref_points = $sth_origin_multilinestring_points{$table_name}->fetchrow_hashref)
+          while (my $hashref_points = $sth_origin_linestring_points{$table_name}->fetchrow_hashref)
           {
             # Print out row contents for debugging purposes
             foreach $column_name (sort keys %{$hashref_points})
             {
               my($column_value) = $hashref_points->{$column_name};
+            
+  #            print "  Column name: '$column_name'\n";
+  #            print "    Column value: '$column_value'\n";
           
-#              print "  Column name: '$column_name'\n";
-#              print "    Column value: '$column_value'\n";
-        
-        
+          
             }
-          
+            
             my($node_id) = Node_Insert( $hashref_points->{'srid_point'} );
-          
-            push(@node_ids, $node_id);
+            
+            push(@node_ids,  $node_id);
+            push(@node_wkbs, $hashref_points->{'srid_point'} );
           }  
 
-          Way_and_Tags_Insert('W', undef, undef, $hashref, @node_ids);
-        
-        } # for each sub-geometry
- 
-      } # if ($hashref->{'type_geometry'} eq 'MULTILINESTRING')
+          # Create some offset lines for cartographic representation
+          #  of house numbers
+          
+          # First get the street number endpoints
+          my($from_left)  = $hashref->{ $street_number_attributes[0] };
+          my($from_right) = $hashref->{ $street_number_attributes[1] };
+          my($to_left)    = $hashref->{ $street_number_attributes[2] };
+          my($to_right)   = $hashref->{ $street_number_attributes[3] };
+   
+  #        print "    From Left  = $from_left\n";
+  #        print "    From Right = $from_right\n";
+  #        print "    To Left    = $to_left\n";
+  #        print "    To right   = $to_right\n";
+          
+          my($calc_lhs) = ($from_left != $street_number_nil_value)
+                           or
+                           ($to_left != $street_number_nil_value);
 
+          my($calc_rhs) = ($from_right != $street_number_nil_value)
+                           or
+                           ($to_right != $street_number_nil_value);
 
-      # Extract points of polygon
-      my($multipolygon_relation_id);
-#      my(@way_ids_outer_ring) = ();
-      if ($hashref->{'type_geometry'} eq 'POLYGON')
-      {
-      
-        
-        ############ TODO: OPTIMISE THIS PREPARED STATEMENT
-        if (!$sth_origin_polygon_points{$table_name})
-        {
-          $sth_origin_polygon_points{$table_name} = 
-            $dbh_origin->prepare(
-              'SELECT '.
-                    'SetSRID(PointN(wkb_extring_geometry, '.
-#                                   'generate_series(1, NPoints(wkb_extring_geometry))), 4326) as srid_point '.
-#                                   'generate_series(1, 3)), 4326) as srid_point '.
-                                   'generate_series(?::int, ?::int)), 4326) as srid_point '.
-              'FROM '.
-                     '(SELECT ExteriorRing('.$affine.') as wkb_extring_geometry '.
-                       'FROM "'.$table_name.'" '.
-                      'WHERE ogc_fid = ?'.
-                     ') as source'
-              ) or die "Can't prepare statement: $DBI::errstr";
-        }      
-        
-        # We use a windowed approach to selecting individual points from the polygon
-        # as otherwise very detailed polygons cause generate_series to exhaust
-        # memory on the postgres server.
-        my($lower_bound) = 1;
-        my($upper_bound) = $pgsql_series_chunk_size;
-        my(@node_ids) = ();
+          # Then get the interpolation cartographic lines.
+          # TODO: Indicate if these are needed, sometimes street numbers are "-1"
+          my ($offset_left_node_ids,
+              $offset_right_node_ids)
+              = Offset_Way($address_distance,
+                           $address_pullback,
+                           $calc_lhs,
+                           $calc_rhs,
+                           @node_wkbs);
 
-        while ($lower_bound <= $hashref->{'numpoints_extring'})
-        {
-          # trim the upper bound to the actual number of points if necessary
-          if ($hashref->{'numpoints_extring'} < $upper_bound)
+          # (We need to make sure that we have acquired all the Node IDs
+          #  we need at this point, in order to insert the way and its
+          #  associated address interpolation all at once)
+
+          # Then store those lines and
+          # the endpoints, if we have interpolation lines to store them on.
+          my($hashref_tags_addr_endpoint);
+          my($addr_relation_id) = undef;
+          
+          if ($#{$offset_left_node_ids} > 0)
           {
-            $upper_bound = $hashref->{'numpoints_extring'};
+  #          if (
+  #              ($from_left != $street_number_nil_value)
+  #              or
+  #              ($to_left != $street_number_nil_value)
+  #             ) 
+  #          {
+
+              my($hashref_tags_addr_interpolate);
+              # odd or even?
+              if (
+                  ($from_left % 2 == 0)
+                  and
+                  ($to_left % 2 == 0)
+                 )
+              {
+                $hashref_tags_addr_interpolate->{'addr:interpolation'} = 'even';
+              }
+              elsif (
+                     ($from_left % 2 == 1)
+                     and
+                     ($to_left % 2 == 1)
+                    )
+              {
+                $hashref_tags_addr_interpolate->{'addr:interpolation'} = 'odd';
+              }
+              else
+              {
+                $hashref_tags_addr_interpolate->{'addr:interpolation'} = 'unknown';
+              }    
+              
+              $hashref_tags_addr_interpolate->{'addr:street'} =
+                 $hashref_tags_addr_endpoint->{'addr:street'} =
+                     $hashref->{$street_number_attributes[4]};
+              
+              my($house_relation_id, @house_way_ids) =
+                Way_and_Tags_Insert('W', undef, undef, 
+                                   $hashref_tags_addr_interpolate, 
+                                   $table_name,
+                                   @{ $offset_left_node_ids  });
+                                 
+  #  print "\n\n\nWANT TO INSERT FROMLEFT $from_left AT NODE ".($offset_left_node_ids->[0])." !!!\n";
+              $hashref_tags_addr_endpoint->{'addr:housenumber'} = $from_left;
+              Node_Tags_Insert($hashref_tags_addr_endpoint, 
+                               $offset_left_node_ids->[0],
+                               $table_name);
+            
+  #  print "\nWANT TO INSERT TOLEFT $to_left AT NODE ".($offset_left_node_ids->[-1])." !!!\n";
+              $hashref_tags_addr_endpoint->{'addr:housenumber'} = $to_left;
+              Node_Tags_Insert($hashref_tags_addr_endpoint,
+                               $offset_left_node_ids->[-1],
+                               $table_name);
+              
+              if ($house_relation_id)
+              {
+                $addr_relation_id = 
+                  Relation_Members_Insert($addr_relation_id,
+                                          'house',
+                                          'R',
+                                          $house_relation_id);
+              }
+              else
+              {
+                $addr_relation_id = 
+                  Relation_Members_Insert($addr_relation_id,
+                                          'house',
+                                          'W',
+                                          @house_way_ids);
+              }                                
+  #          }
+          }
+          
+          if ($#{$offset_right_node_ids} > 0)
+          {
+  #          if (
+  #              ($from_right != $street_number_nil_value)
+  #              or
+  #              ($to_right != $street_number_nil_value)
+  #             ) 
+  #          {
+
+              my($hashref_tags_addr_interpolate);
+              # odd or even?
+              if (
+                  ($from_right % 2 == 0)
+                  and
+                  ($to_right % 2 == 0)
+                 )
+              {
+                $hashref_tags_addr_interpolate->{'addr:interpolation'} = 'even';
+              }
+              elsif (
+                     ($from_right % 2 == 1)
+                     and
+                     ($to_right % 2 == 1)
+                    )
+              {
+                $hashref_tags_addr_interpolate->{'addr:interpolation'} = 'odd';
+              }
+              else
+              {
+                $hashref_tags_addr_interpolate->{'addr:interpolation'} = 'unknown';
+              }    
+              
+              $hashref_tags_addr_interpolate->{'addr:street'} =
+                 $hashref_tags_addr_endpoint->{'addr:street'} =
+                     $hashref->{$street_number_attributes[5]};
+
+              my($house_relation_id, @house_way_ids) =
+                Way_and_Tags_Insert('W', undef, undef, 
+                                   $hashref_tags_addr_interpolate, 
+                                   $table_name,
+                                   @{ $offset_right_node_ids });
+
+  #  print "\nWANT TO INSERT FROMRIGHT $from_right AT NODE ".($offset_right_node_ids->[0])." !!!\n";
+              $hashref_tags_addr_endpoint->{'addr:housenumber'} = $from_right;
+              Node_Tags_Insert($hashref_tags_addr_endpoint,
+                               $offset_right_node_ids->[0],
+                               $table_name);
+            
+  #  print "\nWANT TO INSERT TORIGHT $to_right AT NODE ".($offset_right_node_ids->[-1])." !!!\n";
+              $hashref_tags_addr_endpoint->{'addr:housenumber'} = $to_right;
+              Node_Tags_Insert($hashref_tags_addr_endpoint,
+                               $offset_right_node_ids->[-1],
+                               $table_name);
+              
+              if ($house_relation_id)
+              {
+                $addr_relation_id = 
+                  Relation_Members_Insert($addr_relation_id,
+                                          'house',
+                                          'R',
+                                          $house_relation_id);
+              }
+              else
+              {
+                $addr_relation_id = 
+                  Relation_Members_Insert($addr_relation_id,
+                                          'house',
+                                          'W',
+                                          @house_way_ids);
+              }                                
+  #          }
           }
 
-          print "\nPolygon point windowed query from position '$lower_bound' to position '$upper_bound'...\n";
 
-          my $rc = $sth_origin_polygon_points{$table_name}->execute( 
-                                                                     $lower_bound,
-                                                                     $upper_bound,
-                                                                     $hashref->{'ogc_fid'} )
-            or die "Can't execute statement: $DBI::errstr";
-
-#          print "Polygon Query will return $sth_origin_polygon_points{$table_name}->{NUM_OF_FIELDS} fields.\n";
-#          print "Field names: @{ $sth_origin_polygon_points{$table_name}->{NAME} }\n\n";
-
-
-          while (my $hashref_points = $sth_origin_polygon_points{$table_name}->fetchrow_hashref)
-          {
-            # Print out row contents for debugging purposes
-            foreach $column_name (sort keys %{$hashref_points})
-            {
-              my($column_value) = $hashref_points->{$column_name};
-          
-#              print "  Column name: '$column_name'\n";
-#              print "    Column value: '$column_value'\n";
-        
-        
-            }
-          
-            my($node_id) = Node_Insert( $hashref_points->{'srid_point'} );
-          
-            push(@node_ids, $node_id);
-          } 
-          
-          # adjust window for next pass
-          $lower_bound = ($upper_bound + 1);
-          $upper_bound += $pgsql_series_chunk_size;
-          
-        }
-
-#        my($way_id) = Way_Insert( @node_ids );
-#        Way_Tags_Insert( $hashref, $way_id );
-
-        if ($hashref->{'num_intrings'} > 0)
-        {
-          # Force as the outer ring of a multipolygon
-          $multipolygon_relation_id = 
-            Way_and_Tags_Insert('A', undef, 'outer', $hashref, @node_ids);
-        }
-        else
-        {
-          # Try and insert this as a simple closed way
-          # (which will work if <= 2000 nodes)
-          $multipolygon_relation_id = 
-            Way_and_Tags_Insert('A', undef, undef, $hashref, @node_ids);
-        }    
- 
-      } # if ($hashref->{'type_geometry'} eq 'POLYGON')
-
-
-      # Extract points of polygon interior rings
-#      my(@way_ids_inner_rings) = ();
-      if ($hashref->{'type_geometry'} eq 'POLYGON')
-      {
-      
-   
-        ############ TODO: OPTIMISE THIS PREPARED STATEMENT
-        if (!$sth_origin_polygon_intring_points{$table_name})
-        {
-          $sth_origin_polygon_intring_points{$table_name} = 
-            $dbh_origin->prepare(
-              'SELECT '.
-                    'SetSRID(PointN(wkb_intring_geometry, '.
-#                                   'generate_series(1, '.
-#                                     'NPoints(wkb_intring_geometry))),'.
-                                   'generate_series(?::int, ?::int)), 4326) as srid_point '.
-              'FROM '.
-                     '(SELECT InteriorRingN('.$affine.', ?) as wkb_intring_geometry '.
-                       'FROM "'.$table_name.'" '.
-                      'WHERE ogc_fid = ?'.
-                     ') as source'
-              ) or die "Can't prepare statement: $DBI::errstr";
-        } 
-
-
-        if (!$sth_origin_polygon_intring_npoints{$table_name})
-        {
-          $sth_origin_polygon_intring_npoints{$table_name} = 
-            $dbh_origin->prepare(
-              'SELECT '.
-                    'NumPoints(InteriorRingN(wkb_geometry, ?)) as numpoints_intring '.
-                       'FROM "'.$table_name.'" '.
-                      'WHERE ogc_fid = ?'
-              ) or die "Can't prepare statement: $DBI::errstr";
-        } 
-
-print "\nPolygon Interior Rings: ".$hashref->{'num_intrings'}."\n\n";
-             
+          # Insert the Way itself.
+          my($street_relation_id, @street_way_ids) =
+  #        my($way_id) = Way_Insert( @node_ids );
+  #        Way_Tags_Insert( $hashref, $way_id );
+            Way_and_Tags_Insert('W', undef, undef,
+                                $hashref,
+                                $table_name,
+                                @node_ids);
             
-        # Loop through the interior rings in the polygon
-        foreach $geom_index (1..$hashref->{'num_intrings'})
-        {
-        
-          # We use a windowed approach to selecting individual points from the polygon
-          # as otherwise very detailed polygons cause generate_series to exhaust
-          # memory on the postgres server.
-          my($lower_bound) = 1;
-          my($upper_bound) = $pgsql_series_chunk_size;
-          my(@node_ids) = ();
-
-          # How many points are in this interior ring?
-          my $rc = $sth_origin_polygon_intring_npoints{$table_name}->execute( $geom_index,
-                                                                              $hashref->{'ogc_fid'} ) 
-            or die "Can't execute statement: $DBI::errstr";
-          my $hashref_npoints = $sth_origin_polygon_intring_npoints{$table_name}->fetchrow_hashref;
-
-          while ($lower_bound <= $hashref_npoints->{'numpoints_intring'})
+          # Transfer name of street to the name of the relation
+          my($hashref_tags_addr_relation);
+          $hashref_tags_addr_relation->{'name'} = $hashref->{$street_number_attributes[4]};
+          if (
+              $hashref->{$street_number_attributes[4]} ne
+              $hashref->{$street_number_attributes[5]}
+              )
+          {    
+            $hashref_tags_addr_relation->{'name'} .= ';'.$hashref->{$street_number_attributes[5]};
+          }
+          
+                               
+          # reference the street from the interpolation relation
+          if ($street_relation_id)
           {
-            # trim the upper bound to the actual number of points if necessary
-            if ($hashref_npoints->{'numpoints_intring'} < $upper_bound)
-            {
-              $upper_bound = $hashref_npoints->{'numpoints_intring'};
-            }
+            $addr_relation_id = 
+              Relation_Members_Insert($addr_relation_id,
+                                      'street',
+                                      'R',
+                                      $street_relation_id);
+          }
+          else
+          {
+            $addr_relation_id = 
+              Relation_Members_Insert($addr_relation_id,
+                                      'street',
+                                      'W',
+                                      @street_way_ids);
+          }                                
+   
+  #print "\n\n\n\n '".join(',', keys (%{ $hashref }))."' \n\n\n\n";
+  print "\n   Inserting '".$hashref_tags_addr_relation->{'name'}."' ";
+  print "into address relation '".$addr_relation_id."' \n";
+          Relation_Tags_Insert($hashref_tags_addr_relation,
+                               $addr_relation_id);
 
-            print "\nPolygon point windowed query from position '$lower_bound' to position '$upper_bound'...\n";
+        } # if ($hashref->{'type_geometry'} eq 'LINESTRING')
 
 
-            my $rc = $sth_origin_polygon_intring_points{$table_name}->execute( 
-                                                                               $lower_bound,
-                                                                               $upper_bound,
-                                                                               $geom_index,
+
+        # Extract points of multilinestring
+        if ($hashref->{'type_geometry'} eq 'MULTILINESTRING')
+        {
+          # Yes, sometimes you will get multilinestrings in GA data
+          # that has been split into mapsheet tiles.
+          # This is because there are linestrings that "spill over"
+          # the mapsheet boundary and then come back into the boundary
+          # later down the way.  GA will make these multilinestrings
+          # and the missing portion will show up in the adjoining mapsheet.
+          # 
+          # This import script will split up the multilinestring
+          # into separate ways and copy the tags across.
+        
+          ############ TODO: OPTIMISE THIS PREPARED STATEMENT
+          if (!$sth_origin_multilinestring_points{$table_name})
+          {
+            $sth_origin_multilinestring_points{$table_name} = 
+              $dbh_origin->prepare(
+                'SELECT '.
+                      'SetSRID(PointN(wkb_sub_geometry, '.
+                                     'generate_series(1, '.
+                                       'NPoints(wkb_sub_geometry))),'.
+                                       ' 4326) as srid_point '.
+                'FROM '.
+                       '(SELECT GeometryN('.$affine.', ?) as wkb_sub_geometry '.
+                         'FROM "'.$table_name.'" '.
+                        'WHERE ogc_fid = ?'.
+                       ') as source'
+                ) or die "Can't prepare statement: $DBI::errstr";
+          }      
+          
+          # Loop through the linestrings in the multilinestring
+          foreach $geom_index (1..$hashref->{'num_geometries'})
+          {
+            my $rc = $sth_origin_multilinestring_points{$table_name}->execute( $geom_index,
                                                                                $hashref->{'ogc_fid'} ) 
               or die "Can't execute statement: $DBI::errstr";
 
-#            print "Polygon Query will return $sth_origin_polygon_points{$table_name}->{NUM_OF_FIELDS} fields.\n";
-#            print "Field names: @{ $sth_origin_polygon_points{$table_name}->{NAME} }\n\n";
-            print "Polygon Interior Ring index: $geom_index of ".$hashref->{'num_intrings'}.
-                   " with ".$hashref_npoints->{'numpoints_intring'}." points.\n\n";
+  #          print "MultiLineString Query will return ".
+  #                 "$sth_origin_linestring_points{$table_name}->{NUM_OF_FIELDS} fields.\n";
+  #          print "Field names: @{ $sth_origin_linestring_points{$table_name}->{NAME} }\n\n";
+            print "MultiLineString Sub-geometry index: $geom_index\n\n";
 
 
-            while (my $hashref_points = $sth_origin_polygon_intring_points{$table_name}->fetchrow_hashref)
+            my(@node_ids) = ();
+
+            while (my $hashref_points = $sth_origin_multilinestring_points{$table_name}->fetchrow_hashref)
             {
               # Print out row contents for debugging purposes
               foreach $column_name (sort keys %{$hashref_points})
               {
                 my($column_value) = $hashref_points->{$column_name};
+            
+  #              print "  Column name: '$column_name'\n";
+  #              print "    Column value: '$column_value'\n";
           
-#                print "  Column name: '$column_name'\n";
-#                print "    Column value: '$column_value'\n";
-        
-        
+          
               }
-          
+            
               my($node_id) = Node_Insert( $hashref_points->{'srid_point'} );
-          
+            
               push(@node_ids, $node_id);
-            }
-            
-            # adjust window for next pass
-            $lower_bound = ($upper_bound + 1);
-            $upper_bound += $pgsql_series_chunk_size;
-            
-          }
+            }  
 
-          Way_and_Tags_Insert('A', $multipolygon_relation_id, 'inner', $hashref, @node_ids);
- 
-        } # for each interior ring
+            Way_and_Tags_Insert('W', undef, undef,
+                                $hashref,
+                                $table_name,
+                                @node_ids);
+          
+          } # for each sub-geometry
+   
+        } # if ($hashref->{'type_geometry'} eq 'MULTILINESTRING')
 
-      } # if ($hashref->{'type_geometry'} eq 'POLYGON')
 
-      
-      
-#      # Bind the polygon inner and outer rings into a relationship
-#      if ($hashref->{'type_geometry'} eq 'POLYGON')
-#      {
-#        print "\nOuter Ring Way IDs are: ".join(', ', @way_ids_outer_ring).".";
-#        print "\nInner Ring Way IDs are: ".join(', ', @way_ids_inner_rings).".";
-#     
-#      } # if ($hashref->{'type_geometry'} eq 'POLYGON')
-      
-
-      # Deal with MultiPolygons
-      if ($hashref->{'type_geometry'} eq 'MULTIPOLYGON')
-      {
-        my($multipolygon_relation_id) = undef;
-
-        # Loop through the polygons in the multipolygon
-        foreach $geom_index (1..$hashref->{'num_geometries'})
+        # Extract points of polygon
+        my($multipolygon_relation_id);
+  #      my(@way_ids_outer_ring) = ();
+        if ($hashref->{'type_geometry'} eq 'POLYGON')
         {
-
-          print "Inspecting polygon $geom_index in the multipolygon fid ".$hashref->{'ogc_fid'}."...\n";
         
-          # Get number of points in the exterior ring
-          if (!$sth_origin_multipolygon_numextpoints{$table_name})
-          {
-            $sth_origin_multipolygon_numextpoints{$table_name} = 
-              $dbh_origin->prepare(
-                'SELECT '.
-                      'NumInteriorRings('.
-                         'ST_GeometryN(wkb_geometry, ?)'.
-                       ') as num_intrings, '.
-                      'NumPoints(ExteriorRing('.
-                         'ST_GeometryN(wkb_geometry, ?)'.
-                       ')) as numpoints_extring '.
-                         'FROM "'.$table_name.'" '.
-                        'WHERE ogc_fid = ?'
-                ) or die "Can't prepare statement: $DBI::errstr";
-          }
-          my $rc = $sth_origin_multipolygon_numextpoints{$table_name}->execute(
-                                                                     $geom_index,
-                                                                     $geom_index,
-                                                                     $hashref->{'ogc_fid'} )
-            or die "Can't execute statement: $DBI::errstr";
-
-          my($num_intrings);
-          my($numpoints_extring);
-          if (my $hashref_numextpoints = $sth_origin_multipolygon_numextpoints{$table_name}->fetchrow_hashref)
-          {
-            $num_intrings      = $hashref_numextpoints->{'num_intrings'};
-            $numpoints_extring = $hashref_numextpoints->{'numpoints_extring'};
-          }
-          
-          print "\nPolygon $geom_index has $numpoints_extring points in its exterior ring...\n";
-          
-          # Extract points of polygon
           
           ############ TODO: OPTIMISE THIS PREPARED STATEMENT
-          if (!$sth_origin_multipolygon_points{$table_name})
+          if (!$sth_origin_polygon_points{$table_name})
           {
-            $sth_origin_multipolygon_points{$table_name} = 
+            $sth_origin_polygon_points{$table_name} = 
               $dbh_origin->prepare(
                 'SELECT '.
                       'SetSRID(PointN(wkb_extring_geometry, '.
@@ -2563,16 +2416,12 @@ print "\nPolygon Interior Rings: ".$hashref->{'num_intrings'}."\n\n";
   #                                   'generate_series(1, 3)), 4326) as srid_point '.
                                      'generate_series(?::int, ?::int)), 4326) as srid_point '.
                 'FROM '.
-                       '(SELECT ExteriorRing('.
-                         'ST_GeometryN(wkb_geometry, ?)'.
-                       ') as wkb_extring_geometry '.
+                       '(SELECT ExteriorRing('.$affine.') as wkb_extring_geometry '.
                          'FROM "'.$table_name.'" '.
                         'WHERE ogc_fid = ?'.
                        ') as source'
                 ) or die "Can't prepare statement: $DBI::errstr";
-          }
-          
-                
+          }      
           
           # We use a windowed approach to selecting individual points from the polygon
           # as otherwise very detailed polygons cause generate_series to exhaust
@@ -2581,40 +2430,39 @@ print "\nPolygon Interior Rings: ".$hashref->{'num_intrings'}."\n\n";
           my($upper_bound) = $pgsql_series_chunk_size;
           my(@node_ids) = ();
 
-          while ($lower_bound <= $numpoints_extring)
+          while ($lower_bound <= $hashref->{'numpoints_extring'})
           {
             # trim the upper bound to the actual number of points if necessary
-            if ($numpoints_extring < $upper_bound)
+            if ($hashref->{'numpoints_extring'} < $upper_bound)
             {
-              $upper_bound = $numpoints_extring;
+              $upper_bound = $hashref->{'numpoints_extring'};
             }
 
-            print "\nPolygon point windowed query of polygon $geom_index of fid ".$hashref->{'ogc_fid'}." from position '$lower_bound' to position '$upper_bound'...\n";
+            print "\nPolygon point windowed query from position '$lower_bound' to position '$upper_bound'...\n";
 
-            my $rc = $sth_origin_multipolygon_points{$table_name}->execute( 
+            my $rc = $sth_origin_polygon_points{$table_name}->execute( 
                                                                        $lower_bound,
                                                                        $upper_bound,
-                                                                       $geom_index,
                                                                        $hashref->{'ogc_fid'} )
               or die "Can't execute statement: $DBI::errstr";
 
-#            print "MultiPolygon Query will return $sth_origin_multipolygon_points{$table_name}->{NUM_OF_FIELDS} fields.\n";
-#            print "Field names: @{ $sth_origin_multipolygon_points{$table_name}->{NAME} }\n\n";
+  #          print "Polygon Query will return $sth_origin_polygon_points{$table_name}->{NUM_OF_FIELDS} fields.\n";
+  #          print "Field names: @{ $sth_origin_polygon_points{$table_name}->{NAME} }\n\n";
 
 
-            while (my $hashref_points = $sth_origin_multipolygon_points{$table_name}->fetchrow_hashref)
+            while (my $hashref_points = $sth_origin_polygon_points{$table_name}->fetchrow_hashref)
             {
               # Print out row contents for debugging purposes
               foreach $column_name (sort keys %{$hashref_points})
               {
                 my($column_value) = $hashref_points->{$column_name};
             
-#                print "  Column name: '$column_name'\n";
-#                print "    Column value: '$column_value'\n";
+  #              print "  Column name: '$column_name'\n";
+  #              print "    Column value: '$column_value'\n";
           
           
               }
-#print ":";            
+            
               my($node_id) = Node_Insert( $hashref_points->{'srid_point'} );
             
               push(@node_ids, $node_id);
@@ -2629,29 +2477,39 @@ print "\nPolygon Interior Rings: ".$hashref->{'num_intrings'}."\n\n";
   #        my($way_id) = Way_Insert( @node_ids );
   #        Way_Tags_Insert( $hashref, $way_id );
 
-#          if ($num_intrings > 0)
-#          {
-          # Force as the outer ring of a multipolygon
-          $multipolygon_relation_id = 
-            Way_and_Tags_Insert('A', $multipolygon_relation_id, 'outer', $hashref, @node_ids);
-#          }
-#          else
-#          {
-#            # Try and insert this as a simple closed way
-#            # (which will work if <= 2000 nodes)
-#            # 
-#            $multipolygon_relation_id = 
-#              Way_and_Tags_Insert('A', $multipolygon_relation_id, 'outer', $hashref, @node_ids);
-#          }    
+          if ($hashref->{'num_intrings'} > 0)
+          {
+            # Force as the outer ring of a multipolygon
+            $multipolygon_relation_id = 
+              Way_and_Tags_Insert('A', undef, 'outer',
+                                  $hashref,
+                                  $table_name,
+                                  @node_ids);
+          }
+          else
+          {
+            # Try and insert this as a simple closed way
+            # (which will work if <= 2000 nodes)
+            $multipolygon_relation_id = 
+              Way_and_Tags_Insert('A', undef, undef,
+                                  $hashref,
+                                  $table_name,
+                                  @node_ids);
+          }    
    
-print "Multipolygon Relation ID = $multipolygon_relation_id\n";
+        } # if ($hashref->{'type_geometry'} eq 'POLYGON')
 
-          # Extract points of polygon interior rings
+
+        # Extract points of polygon interior rings
+  #      my(@way_ids_inner_rings) = ();
+        if ($hashref->{'type_geometry'} eq 'POLYGON')
+        {
+        
      
           ############ TODO: OPTIMISE THIS PREPARED STATEMENT
-          if (!$sth_origin_multipolygon_intring_points{$table_name})
+          if (!$sth_origin_polygon_intring_points{$table_name})
           {
-            $sth_origin_multipolygon_intring_points{$table_name} = 
+            $sth_origin_polygon_intring_points{$table_name} = 
               $dbh_origin->prepare(
                 'SELECT '.
                       'SetSRID(PointN(wkb_intring_geometry, '.
@@ -2659,9 +2517,7 @@ print "Multipolygon Relation ID = $multipolygon_relation_id\n";
   #                                     'NPoints(wkb_intring_geometry))),'.
                                      'generate_series(?::int, ?::int)), 4326) as srid_point '.
                 'FROM '.
-                       '(SELECT InteriorRingN('.
-                           'ST_GeometryN(wkb_geometry, ?)'.
-                         ', ?) as wkb_intring_geometry '.
+                       '(SELECT InteriorRingN('.$affine.', ?) as wkb_intring_geometry '.
                          'FROM "'.$table_name.'" '.
                         'WHERE ogc_fid = ?'.
                        ') as source'
@@ -2669,23 +2525,22 @@ print "Multipolygon Relation ID = $multipolygon_relation_id\n";
           } 
 
 
-          if (!$sth_origin_multipolygon_intring_npoints{$table_name})
+          if (!$sth_origin_polygon_intring_npoints{$table_name})
           {
-            $sth_origin_multipolygon_intring_npoints{$table_name} = 
+            $sth_origin_polygon_intring_npoints{$table_name} = 
               $dbh_origin->prepare(
                 'SELECT '.
-                      'NumPoints(InteriorRingN('.
-                         'ST_GeometryN(wkb_geometry, ?)'.
-                       ', ?)) as numpoints_intring '.
+                      'NumPoints(InteriorRingN(wkb_geometry, ?)) as numpoints_intring '.
                          'FROM "'.$table_name.'" '.
                         'WHERE ogc_fid = ?'
                 ) or die "Can't prepare statement: $DBI::errstr";
           } 
 
-print "\nPolygon Interior Rings: ".$num_intrings."\n\n";
-
+  print "\nPolygon Interior Rings: ".$hashref->{'num_intrings'}."\n\n";
+               
+              
           # Loop through the interior rings in the polygon
-          foreach $intring_index (1..$num_intrings)
+          foreach $geom_index (1..$hashref->{'num_intrings'})
           {
           
             # We use a windowed approach to selecting individual points from the polygon
@@ -2696,11 +2551,10 @@ print "\nPolygon Interior Rings: ".$num_intrings."\n\n";
             my(@node_ids) = ();
 
             # How many points are in this interior ring?
-            my $rc = $sth_origin_multipolygon_intring_npoints{$table_name}->execute( $geom_index,
-                                                                                      $intring_index,
+            my $rc = $sth_origin_polygon_intring_npoints{$table_name}->execute( $geom_index,
                                                                                 $hashref->{'ogc_fid'} ) 
               or die "Can't execute statement: $DBI::errstr";
-            my $hashref_npoints = $sth_origin_multipolygon_intring_npoints{$table_name}->fetchrow_hashref;
+            my $hashref_npoints = $sth_origin_polygon_intring_npoints{$table_name}->fetchrow_hashref;
 
             while ($lower_bound <= $hashref_npoints->{'numpoints_intring'})
             {
@@ -2713,21 +2567,20 @@ print "\nPolygon Interior Rings: ".$num_intrings."\n\n";
               print "\nPolygon point windowed query from position '$lower_bound' to position '$upper_bound'...\n";
 
 
-              my $rc = $sth_origin_multipolygon_intring_points{$table_name}->execute( 
+              my $rc = $sth_origin_polygon_intring_points{$table_name}->execute( 
                                                                                  $lower_bound,
                                                                                  $upper_bound,
                                                                                  $geom_index,
-                                                                                 $intring_index,
                                                                                  $hashref->{'ogc_fid'} ) 
                 or die "Can't execute statement: $DBI::errstr";
 
   #            print "Polygon Query will return $sth_origin_polygon_points{$table_name}->{NUM_OF_FIELDS} fields.\n";
   #            print "Field names: @{ $sth_origin_polygon_points{$table_name}->{NAME} }\n\n";
-              print "Polygon Interior Ring index: $intring_index of ".$num_intrings.
+              print "Polygon Interior Ring index: $geom_index of ".$hashref->{'num_intrings'}.
                      " with ".$hashref_npoints->{'numpoints_intring'}." points.\n\n";
 
 
-              while (my $hashref_points = $sth_origin_multipolygon_intring_points{$table_name}->fetchrow_hashref)
+              while (my $hashref_points = $sth_origin_polygon_intring_points{$table_name}->fetchrow_hashref)
               {
                 # Print out row contents for debugging purposes
                 foreach $column_name (sort keys %{$hashref_points})
@@ -2751,70 +2604,367 @@ print "\nPolygon Interior Rings: ".$num_intrings."\n\n";
               
             }
 
-            Way_and_Tags_Insert('A', $multipolygon_relation_id, 'inner', $hashref, @node_ids);
+            Way_and_Tags_Insert('A', $multipolygon_relation_id, 'inner',
+                                $hashref,
+                                $table_name,
+                                @node_ids);
    
           } # for each interior ring
 
-        } # foreach polygon in the multipolygon
+        } # if ($hashref->{'type_geometry'} eq 'POLYGON')
+
         
-      } # if ($hashref->{'type_geometry'} eq 'MULTIPOLYGON')
+        
+  #      # Bind the polygon inner and outer rings into a relationship
+  #      if ($hashref->{'type_geometry'} eq 'POLYGON')
+  #      {
+  #        print "\nOuter Ring Way IDs are: ".join(', ', @way_ids_outer_ring).".";
+  #        print "\nInner Ring Way IDs are: ".join(', ', @way_ids_inner_rings).".";
+  #     
+  #      } # if ($hashref->{'type_geometry'} eq 'POLYGON')
+        
+
+        # Deal with MultiPolygons
+        if ($hashref->{'type_geometry'} eq 'MULTIPOLYGON')
+        {
+          my($multipolygon_relation_id) = undef;
+
+          # Loop through the polygons in the multipolygon
+          foreach $geom_index (1..$hashref->{'num_geometries'})
+          {
+
+            print "Inspecting polygon $geom_index in the multipolygon fid ".$hashref->{'ogc_fid'}."...\n";
+          
+            # Get number of points in the exterior ring
+            if (!$sth_origin_multipolygon_numextpoints{$table_name})
+            {
+              $sth_origin_multipolygon_numextpoints{$table_name} = 
+                $dbh_origin->prepare(
+                  'SELECT '.
+                        'NumInteriorRings('.
+                           'ST_GeometryN(wkb_geometry, ?)'.
+                         ') as num_intrings, '.
+                        'NumPoints(ExteriorRing('.
+                           'ST_GeometryN(wkb_geometry, ?)'.
+                         ')) as numpoints_extring '.
+                           'FROM "'.$table_name.'" '.
+                          'WHERE ogc_fid = ?'
+                  ) or die "Can't prepare statement: $DBI::errstr";
+            }
+            my $rc = $sth_origin_multipolygon_numextpoints{$table_name}->execute(
+                                                                       $geom_index,
+                                                                       $geom_index,
+                                                                       $hashref->{'ogc_fid'} )
+              or die "Can't execute statement: $DBI::errstr";
+
+            my($num_intrings);
+            my($numpoints_extring);
+            if (my $hashref_numextpoints = $sth_origin_multipolygon_numextpoints{$table_name}->fetchrow_hashref)
+            {
+              $num_intrings      = $hashref_numextpoints->{'num_intrings'};
+              $numpoints_extring = $hashref_numextpoints->{'numpoints_extring'};
+            }
+            
+            print "\nPolygon $geom_index has $numpoints_extring points in its exterior ring...\n";
+            
+            # Extract points of polygon
+            
+            ############ TODO: OPTIMISE THIS PREPARED STATEMENT
+            if (!$sth_origin_multipolygon_points{$table_name})
+            {
+              $sth_origin_multipolygon_points{$table_name} = 
+                $dbh_origin->prepare(
+                  'SELECT '.
+                        'SetSRID(PointN(wkb_extring_geometry, '.
+    #                                   'generate_series(1, NPoints(wkb_extring_geometry))), 4326) as srid_point '.
+    #                                   'generate_series(1, 3)), 4326) as srid_point '.
+                                       'generate_series(?::int, ?::int)), 4326) as srid_point '.
+                  'FROM '.
+                         '(SELECT ExteriorRing('.
+                           'ST_GeometryN(wkb_geometry, ?)'.
+                         ') as wkb_extring_geometry '.
+                           'FROM "'.$table_name.'" '.
+                          'WHERE ogc_fid = ?'.
+                         ') as source'
+                  ) or die "Can't prepare statement: $DBI::errstr";
+            }
+            
+                  
+            
+            # We use a windowed approach to selecting individual points from the polygon
+            # as otherwise very detailed polygons cause generate_series to exhaust
+            # memory on the postgres server.
+            my($lower_bound) = 1;
+            my($upper_bound) = $pgsql_series_chunk_size;
+            my(@node_ids) = ();
+
+            while ($lower_bound <= $numpoints_extring)
+            {
+              # trim the upper bound to the actual number of points if necessary
+              if ($numpoints_extring < $upper_bound)
+              {
+                $upper_bound = $numpoints_extring;
+              }
+
+              print "\nPolygon point windowed query of polygon $geom_index of fid ".$hashref->{'ogc_fid'}." from position '$lower_bound' to position '$upper_bound'...\n";
+
+              my $rc = $sth_origin_multipolygon_points{$table_name}->execute( 
+                                                                         $lower_bound,
+                                                                         $upper_bound,
+                                                                         $geom_index,
+                                                                         $hashref->{'ogc_fid'} )
+                or die "Can't execute statement: $DBI::errstr";
+
+  #            print "MultiPolygon Query will return $sth_origin_multipolygon_points{$table_name}->{NUM_OF_FIELDS} fields.\n";
+  #            print "Field names: @{ $sth_origin_multipolygon_points{$table_name}->{NAME} }\n\n";
 
 
-      
-      # Extract plain points
-      if ($hashref->{'type_geometry'} eq 'POINT')
+              while (my $hashref_points = $sth_origin_multipolygon_points{$table_name}->fetchrow_hashref)
+              {
+                # Print out row contents for debugging purposes
+                foreach $column_name (sort keys %{$hashref_points})
+                {
+                  my($column_value) = $hashref_points->{$column_name};
+              
+  #                print "  Column name: '$column_name'\n";
+  #                print "    Column value: '$column_value'\n";
+            
+            
+                }
+  #print ":";            
+                my($node_id) = Node_Insert( $hashref_points->{'srid_point'} );
+              
+                push(@node_ids, $node_id);
+              } 
+              
+              # adjust window for next pass
+              $lower_bound = ($upper_bound + 1);
+              $upper_bound += $pgsql_series_chunk_size;
+              
+            }
+
+    #        my($way_id) = Way_Insert( @node_ids );
+    #        Way_Tags_Insert( $hashref, $way_id );
+
+  #          if ($num_intrings > 0)
+  #          {
+            # Force as the outer ring of a multipolygon
+            $multipolygon_relation_id = 
+              Way_and_Tags_Insert('A', $multipolygon_relation_id, 'outer',
+                                  $hashref,
+                                  $table_name,
+                                  @node_ids);
+  #          }
+  #          else
+  #          {
+  #            # Try and insert this as a simple closed way
+  #            # (which will work if <= 2000 nodes)
+  #            # 
+  #            $multipolygon_relation_id = 
+  #              Way_and_Tags_Insert('A', $multipolygon_relation_id, 'outer', $hashref, @node_ids);
+  #          }    
+     
+  print "Multipolygon Relation ID = $multipolygon_relation_id\n";
+
+            # Extract points of polygon interior rings
+       
+            ############ TODO: OPTIMISE THIS PREPARED STATEMENT
+            if (!$sth_origin_multipolygon_intring_points{$table_name})
+            {
+              $sth_origin_multipolygon_intring_points{$table_name} = 
+                $dbh_origin->prepare(
+                  'SELECT '.
+                        'SetSRID(PointN(wkb_intring_geometry, '.
+    #                                   'generate_series(1, '.
+    #                                     'NPoints(wkb_intring_geometry))),'.
+                                       'generate_series(?::int, ?::int)), 4326) as srid_point '.
+                  'FROM '.
+                         '(SELECT InteriorRingN('.
+                             'ST_GeometryN(wkb_geometry, ?)'.
+                           ', ?) as wkb_intring_geometry '.
+                           'FROM "'.$table_name.'" '.
+                          'WHERE ogc_fid = ?'.
+                         ') as source'
+                  ) or die "Can't prepare statement: $DBI::errstr";
+            } 
+
+
+            if (!$sth_origin_multipolygon_intring_npoints{$table_name})
+            {
+              $sth_origin_multipolygon_intring_npoints{$table_name} = 
+                $dbh_origin->prepare(
+                  'SELECT '.
+                        'NumPoints(InteriorRingN('.
+                           'ST_GeometryN(wkb_geometry, ?)'.
+                         ', ?)) as numpoints_intring '.
+                           'FROM "'.$table_name.'" '.
+                          'WHERE ogc_fid = ?'
+                  ) or die "Can't prepare statement: $DBI::errstr";
+            } 
+
+  print "\nPolygon Interior Rings: ".$num_intrings."\n\n";
+
+            # Loop through the interior rings in the polygon
+            foreach $intring_index (1..$num_intrings)
+            {
+            
+              # We use a windowed approach to selecting individual points from the polygon
+              # as otherwise very detailed polygons cause generate_series to exhaust
+              # memory on the postgres server.
+              my($lower_bound) = 1;
+              my($upper_bound) = $pgsql_series_chunk_size;
+              my(@node_ids) = ();
+
+              # How many points are in this interior ring?
+              my $rc = $sth_origin_multipolygon_intring_npoints{$table_name}->execute( $geom_index,
+                                                                                        $intring_index,
+                                                                                  $hashref->{'ogc_fid'} ) 
+                or die "Can't execute statement: $DBI::errstr";
+              my $hashref_npoints = $sth_origin_multipolygon_intring_npoints{$table_name}->fetchrow_hashref;
+
+              while ($lower_bound <= $hashref_npoints->{'numpoints_intring'})
+              {
+                # trim the upper bound to the actual number of points if necessary
+                if ($hashref_npoints->{'numpoints_intring'} < $upper_bound)
+                {
+                  $upper_bound = $hashref_npoints->{'numpoints_intring'};
+                }
+
+                print "\nPolygon point windowed query from position '$lower_bound' to position '$upper_bound'...\n";
+
+
+                my $rc = $sth_origin_multipolygon_intring_points{$table_name}->execute( 
+                                                                                   $lower_bound,
+                                                                                   $upper_bound,
+                                                                                   $geom_index,
+                                                                                   $intring_index,
+                                                                                   $hashref->{'ogc_fid'} ) 
+                  or die "Can't execute statement: $DBI::errstr";
+
+    #            print "Polygon Query will return $sth_origin_polygon_points{$table_name}->{NUM_OF_FIELDS} fields.\n";
+    #            print "Field names: @{ $sth_origin_polygon_points{$table_name}->{NAME} }\n\n";
+                print "Polygon Interior Ring index: $intring_index of ".$num_intrings.
+                       " with ".$hashref_npoints->{'numpoints_intring'}." points.\n\n";
+
+
+                while (my $hashref_points = $sth_origin_multipolygon_intring_points{$table_name}->fetchrow_hashref)
+                {
+                  # Print out row contents for debugging purposes
+                  foreach $column_name (sort keys %{$hashref_points})
+                  {
+                    my($column_value) = $hashref_points->{$column_name};
+              
+    #                print "  Column name: '$column_name'\n";
+    #                print "    Column value: '$column_value'\n";
+            
+            
+                  }
+              
+                  my($node_id) = Node_Insert( $hashref_points->{'srid_point'} );
+              
+                  push(@node_ids, $node_id);
+                }
+                
+                # adjust window for next pass
+                $lower_bound = ($upper_bound + 1);
+                $upper_bound += $pgsql_series_chunk_size;
+                
+              }
+
+              Way_and_Tags_Insert('A', $multipolygon_relation_id, 'inner',
+                                  $hashref,
+                                  $table_name,
+                                  @node_ids);
+     
+            } # for each interior ring
+
+          } # foreach polygon in the multipolygon
+          
+        } # if ($hashref->{'type_geometry'} eq 'MULTIPOLYGON')
+
+
+        
+        # Extract plain points
+        if ($hashref->{'type_geometry'} eq 'POINT')
+        {
+          my($node_id) = Node_Insert( $hashref->{'srid_geometry'} );
+          
+          Node_Tags_Insert( $hashref, 
+                            $node_id.
+                            $table_name );
+        }
+
+  #      print "END OF RECORD\n\n\n";
+
+
+        # Now test to see if we've gone over the limit
+        print "\nDealt with row #".$origin_row_number.", in table ".$table_name.", element # now ".$changeset_element_count.".\n";
+        
+        if ($changeset_element_count > $osmapi_changeset_chunk_size)
+        {
+          # uh oh, roll back the last transaction,
+          # tell the user what to do next and wrap it up.
+          
+          # TODO
+          $dbh_destination->rollback();
+          
+          print "\n\nCHANGESET LIMIT REACHED!\n\n";
+          
+          print 
+
+          print "\n".
+                 "Destination database is now ready for use by\n".
+                 "  'osmosis --read-pgsql ...  --dataset-dump ...  --derive-change'.\n\n";
+
+          print "After you have used osmosis on the destination database,\n".
+                 "change this script so that:\n".
+                 '    $start_origin_from_table = '."'".$table_name."'"."\n".
+                 '    $start_origin_from_row   = '.$origin_row_number."\n\n".
+                 "Then run this script again for the next pass.\n";
+                 
+          exit;
+
+        }
+        else
+        {
+          # Safe to commit the transaction!
+          $dbh_destination->commit();
+  #exit;        
+          $origin_row_number++;
+        }
+        
+      } # while (my $hashref = $sth_origin->fetchrow_hashref)
+
+      print "** Completed our batch of up to $sql_batch_size rows ".  
+                "from row $start_origin_from_row.\n\n";
+
+      # Work out if this is the last batch or do we go around again.
+      if (
+           $origin_row_number == 
+          ($start_origin_from_row + $pgsql_batch_limit_rows)
+         ) 
       {
-        my($node_id) = Node_Insert( $hashref->{'srid_geometry'} );
-        
-        Node_Tags_Insert( $hashref, $node_id );
-      }
+        # set up start point for next batch.    
+        $start_origin_from_row = $origin_row_number;
 
-#      print "END OF RECORD\n\n\n";
-
-
-      # Now test to see if we've gone over the limit
-      print "\nDealt with row #".$origin_row_number.", in table ".$table_name.", element # now ".$changeset_element_count.".\n";
-      
-      if ($changeset_element_count > $osmapi_changeset_chunk_size)
-      {
-        # uh oh, roll back the last transaction,
-        # tell the user what to do next and wrap it up.
-        
-        # TODO
-        $dbh_destination->rollback();
-        
-        print "\n\nCHANGESET LIMIT REACHED!\n\n";
-        
-        print 
-
-        print "\n".
-               "Destination database is now ready for use by\n".
-               "  'osmosis --read-pgsql ...  --dataset-dump ...  --derive-change'.\n\n";
-
-        print "After you have used osmosis on the destination database,\n".
-               "change this script so that:\n".
-               '    $start_origin_from_table = '."'".$table_name."'"."\n".
-               '    $start_origin_from_row   = '.$origin_row_number."\n\n".
-               "Then run this script again for the next pass.\n";
-               
-        exit;
-
+        print "** Next time will be from row $start_origin_from_row.\n\n";
       }
       else
       {
-        # Safe to commit the transaction!
-        $dbh_destination->commit();
-#exit;        
-        $origin_row_number++;
+        # We reached the end of the table before we reached the end
+        # of the batch size.
+        last;
       }
       
-    }
-    
+    } while (1);
+    #
+    ## End of "Run a batch of rows fetched from the database"
+    #
      
 
     print "END OF TABLE\n\n\n\n";
     
-  }
+  } # foreach $table_name (@tables_origin)
 
 
 
