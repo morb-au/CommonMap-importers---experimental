@@ -1,0 +1,11 @@
+
+Canada, Land Cover Circa 2000
+-----------------------------
+
+Get your ca.lc files from: 
+  ftp://ftp2.cits.rncan.gc.ca/pub/geobase/official/lcc2000v_csc2000v/
+  
+Description of the source dataset: 
+  http://www.geobase.ca/geobase/en/data/landcover/csc2000v/description.html
+
+Last checked: 2011-02-16.
