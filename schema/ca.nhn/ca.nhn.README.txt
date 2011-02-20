@@ -1,0 +1,11 @@
+
+Canada, National Hydro Network
+-----------------------------
+
+Get your ca.nhn files from: 
+  ftp://ftp2.cits.rncan.gc.ca/pub/geobase/official/nhn_rhn/
+  
+Description of the source dataset: 
+  http://www.geobase.ca/geobase/en/data/nhn/description.html
+
+Last checked: 2011-02-13.
