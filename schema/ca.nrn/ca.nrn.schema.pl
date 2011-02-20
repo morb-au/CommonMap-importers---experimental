@@ -18,7 +18,30 @@
 
   ## Tables in the origin database (ogr PostGIS format) to scan
   @tables_origin = (
-    'nrn_pe_9_0_roadseg'
+#    'nrn_ab_7_1_blkpassage',
+#    'nrn_ab_7_1_ferryseg',
+#    'nrn_ab_7_1_junction',
+#    'nrn_ab_7_1_roadseg',
+#    'nrn_ab_7_1_tollpoint',
+
+#    'nrn_bc_7_0_blkpassage',
+#    'nrn_bc_7_0_ferryseg',
+#    'nrn_bc_7_0_junction',
+#    'nrn_bc_7_0_roadseg',
+#    'nrn_bc_7_0_tollpoint',
+ 
+#    'nrn_pe_9_0_blkpassage',
+#    'nrn_pe_9_0_ferryseg',
+#    'nrn_pe_9_0_junction',
+#    'nrn_pe_9_0_roadseg'
+#    'nrn_pe_9_0_tollpoint',
+
+    'nrn_sk_4_0_blkpassage',
+    'nrn_sk_4_0_ferryseg',
+    'nrn_sk_4_0_junction',
+    'nrn_sk_4_0_roadseg',
+    'nrn_sk_4_0_tollpoint',
+    
     );
 
 
@@ -31,15 +54,20 @@
   #  listed in the LHS of %{ $attribute_translate{}{} } futher below.
   #
   %attributes_origin = (
-     'roadsegid'           => 'ca.geobase.nrn.pe:id',
+#     'roadsegid'           => 'ca.geobase.nrn.pe:id',
+     'roadsegid'           => 'ca.geobase.nrn:id',
      'nid'                 => 'ca.gc.rncan:nid',
 #     'l_stname_c'          => 'name',
      'r_stname_c'          => 'name',
      'rtnumber1'           => 'ref',
      'accuracy'            => 'accuracy:planimetric',
      'acqtech'             => 'source',
-     'provider'            => 'ca.geobase.nrn.pe:provider',
+#     'provider'            => 'ca.geobase.nrn.pe:provider',
+     'provider'            => 'ca.geobase.nrn:provider',
      'nbrlanes'            => 'lanes',
+     
+     # Junctions
+     'exitnbr'             => 'ref',
      
      # these ones are just for passthrough to %{$attribute_translate} below.
 #     'code'                => 'code',
@@ -49,6 +77,13 @@
      'structtype'          => 'structtype',
      'strunameen'          => 'alt_name:en',
      'strunamefr'          => 'alt_name:fr',
+
+     'blkpassty'           => 'blkpassty',
+     'junctype'            => 'junctype',
+     'tollpttype'          => 'tollpttype',
+
+     'cm_feature_type'     => 'cm_feature_type',
+     
 
      # derived attributes     
      'addr:housenumber'    => 'addr:housenumber',
@@ -146,8 +181,36 @@
   %{ $attribute_translate{'structtype'}{'None'} }                 = ( );
 
 
+
+  %{ $attribute_translate{'blkpassty'}{'Removable'} }             = ( 'barrier'     => 'removable' );  # New for CommonMap
+  %{ $attribute_translate{'blkpassty'}{'Permanently Fixed'} }     = ( 'barrier'     => 'yes' );        # New for CommonMap
+
+
+  %{ $attribute_translate{'junctype'}{'Ferry'} }                  = ( 'amenity'     => 'ferry_terminal' );
+  %{ $attribute_translate{'junctype'}{'NatProvTer'} }             = ( 'boundary'    => 'administrative',
+                                                                       'admin_level' => '4' );
+
+
+  %{ $attribute_translate{'tollpttype'}{'Physical Toll Booth'} }  = ( 'toll'       => 'yes',
+                                                                       'barrier'    => 'toll'      );   # New for CommonMap
+  %{ $attribute_translate{'tollpttype'}{'Virtual Toll Booth'} }   = ( 'toll'       => 'yes'       ); 
+  %{ $attribute_translate{'tollpttype'}{'Hybrid'} }               = ( 'toll'       => 'yes',
+                                                                       'barrier'    => 'optional'  );   # New for CommonMap
+
+
+  # Special case for Ferry Routes
+  %{ $attribute_translate{'cm_feature_type'}{'Ferry Route'} } 
+                                                                   = ( 'route'     => 'ferry' );
+  # Special case for Motorway Exits
+  %{ $attribute_translate{'cm_feature_type'}{'Motorway Junction'} } 
+                                                                   = ( 'highway'   => 'motorway_junction' );
+
+
+
   # 'Unknown' = magic text for 'n/a'
   %{ $attribute_translate{'name'}       {'Unknown'} } = ( );
+  # 'None' = magic text for 'n/a'
+  %{ $attribute_translate{'name'}       {'None'} }    = ( );
   # 'None' = magic text for 'n/a'
   %{ $attribute_translate{'ref'}        {'None'} }    = ( );
   # 'None' = magic text for 'n/a'
