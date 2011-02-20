@@ -18,8 +18,29 @@
 
   ## Tables in the origin database (ogr PostGIS format) to scan
   @tables_origin = (
-    '10m_admin_0_countries',
-#    '10m_land'
+    '10m_land',
+    '10m_minor_islands',
+    
+#    '10m_admin_0_countries',
+    '10m_admin_0_scale_ranks_with_minor_islands',
+    '10m_admin_0_breakaway_disputed_areas_scale_ranks',
+    '10m_admin_1_states_provinces_shp',
+    
+    '10m_populated_places',
+    '10m_urban_areas',
+    '10m_roads_north_america',
+    '10m_railroads',
+    '10m_us_parks_area',  # TODO
+    '10m_us_parks_line',  # TODO
+    '10m_us_parks_point', # TODO
+    
+    '10m_rivers_north_america',
+    '10m_rivers_europe',
+    '10m_lakes_north_america',
+    '10m_lakes_europe',
+    
+    '10m_playas',
+
     );
 
 
@@ -33,10 +54,72 @@
   #
   %attributes_origin = (
      'ogc_fid'             => 'ne:fid',
-     'country'             => 'name',
+
+#     # '10m_admin_0_countries'
+#     'country'             => 'name',
+
+     # '10m_admin_0_scale_ranks_with_minor-islands'
+     'subunit'             => 'name',
+                              # consecutive 'is_in' entries are prepended
+     'sov'                 => 'is_in',
+     'admin_0'             => 'is_in',
+     'mapunit'             => 'is_in',
+
+     # '10m_admin_0_breakaway_disputed_areas_scale_ranks'
+     'comment'             => 'description',
+     'name_alt'            => 'alt_name',
+     'namegroup'           => 'is_in',
+
+     # '10m_admin_1_states_provinces_shp'
+     'name_0'              => 'is_in',
+     'name_1'              => 'name',
+     'varname_1'           => 'alt_name',
+     'remarks_1'           => 'note',
      
+     # '10m_populated_places'
+     'name'                => 'name',
+     'namealt'             => 'alt_name',
+                              # consecutive 'is_in' entries are prepended
+     'sov_a3'              => 'is_in',
+#     'adm0name'            => 'is_in',       
+     'adm1name'            => 'is_in',
+     'namepar'             => 'is_in',       # More like the "administrative authority", it seems.
+     
+     # '10m_roads_north_america'
+                              # consecutive 'ref' entries are prepended
+     'number'              => 'ref',
+     'prefix'              => 'ref',
+                              # consecutive 'is_in' entries are prepended
+     'country'             => 'is_in',       
+     'state'               => 'is_in',
+
+     # '10m_railroads'
+#     'sov_a3'              => 'is_in',
+# TODO: Let these be per-table
+# rather than global to the whole import.
+# Unfortunately Natural Earth's data dictionary
+# is a bit inconsisent across tables.
+
+     # '10m_rivers_north_america'
+     # '10m_rivers_europe'
+     'name1'               => 'name',
+
+     # '10m_lakes_north_america'
+     # '10m_lakes_europe'
+#     'name1'               => 'name',
+     'altitude'             => 'ele',    # TODO: Is this in metres?
+     
+     # '10m_playas'
+#     'name1'               => 'name',
+
+     
+     #
      # these ones are just for passthrough to %{$attribute_translate} below.
+     #
      'featurecla'          => 'featurecla',
+
+     # '10m_admin_1_states_provinces_shp'
+     'engtype_1'           => 'engtype_1',
 
     );
    
@@ -70,16 +153,116 @@
   #  destination at all.
 
   %{ $attribute_translate{'featurecla'}{'Land'} }                      = ( 'natural'     => 'land' );
+  %{ $attribute_translate{'featurecla'}{'Minor island'} }              = ( 'natural'     => 'land' );
 
-  %{ $attribute_translate{'featurecla'}{'Admin-0 map-subunits'} }      = ( 'boundary'    => 'administrative',
+  %{ $attribute_translate{'featurecla'}{'Admin-0 scale ranks'} }       = ( 'place'       => 'city' );
+
+  %{ $attribute_translate{'featurecla'}{'Admin-0 map-subunits'} }      = ( 'type'        => 'boundary',
+                                                                            'boundary'    => 'administrative',
                                                                             'admin_level' => '2' );
+  %{ $attribute_translate{'featurecla'}{'Indeterminant'} }             = ( 'type'        => 'boundary',
+                                                                            'boundary'    => 'administrative',
+                                                                            'admin_level' => 'indeterminant' );
+  %{ $attribute_translate{'featurecla'}{'Overlay'} }                   = ( 'type'        => 'boundary',
+                                                                            'boundary'    => 'administrative',
+                                                                            'admin_level' => 'overlay' );
+  %{ $attribute_translate{'featurecla'}{'Breakaway and disputed'} }    = ( 'type'        => 'boundary',
+                                                                            'boundary'    => 'administrative',
+                                                                            'admin_level' => 'disputed - breakaway' );
+  %{ $attribute_translate{'featurecla'}{'Claim area'} }                = ( 'type'        => 'boundary',
+                                                                            'boundary'    => 'administrative',
+                                                                            'admin_level' => 'disputed - claimed' );
+
+  %{ $attribute_translate{'featurecla'}{'Admin-0 capital'} }           = ( 'place'       => 'city' );
+  %{ $attribute_translate{'featurecla'}{'Admin-0 capital alt'} }       = ( 'place'       => 'city' );
+  %{ $attribute_translate{'featurecla'}{'Admin-0 region capital'} }    = ( 'place'       => 'city' );
+  %{ $attribute_translate{'featurecla'}{'Admin-1 capital'} }           = ( 'place'       => 'city' );
+  %{ $attribute_translate{'featurecla'}{'Admin-1 region capital'} }    = ( 'place'       => 'city' );
+  %{ $attribute_translate{'featurecla'}{'Populated place'} }           = ( 'place'       => 'town' );
+  %{ $attribute_translate{'featurecla'}{'Scientific station'} }        = ( 'place'       => 'locality',
+                                                                            'note'        => 'Scientific station' );
+
+  %{ $attribute_translate{'engtype_1'}{'Administrative County'} }      = ( 'type'        => 'boundary',
+                                                                            'boundary'    => 'administrative',
+                                                                            'admin_level' => '6' );
+  %{ $attribute_translate{'engtype_1'}{'Administrative State'} }       = ( 'type'        => 'boundary',
+                                                                            'boundary'    => 'administrative',
+                                                                            'admin_level' => '4' );
+  %{ $attribute_translate{'engtype_1'}{'Administrative Zone'} }        = ( 'type'        => 'boundary',
+                                                                            'boundary'    => 'administrative',
+                                                                            'admin_level' => '4' );
+  %{ $attribute_translate{'engtype_1'}{'Arrondissement'} }             = ( 'type'        => 'boundary',
+                                                                            'boundary'    => 'administrative',
+                                                                            'admin_level' => '7' );
+  %{ $attribute_translate{'engtype_1'}{'Department'} }                 = ( 'type'        => 'boundary',
+                                                                            'boundary'    => 'administrative',
+                                                                            'admin_level' => '4' );
+# Incomplete allowed values for Level 1 admin areas
+  %{ $attribute_translate{'engtype_1'}{'Province'} }                   = ( 'type'        => 'boundary',
+                                                                            'boundary'    => 'administrative',
+                                                                            'admin_level' => '4' );
+  %{ $attribute_translate{'engtype_1'}{'State'} }                      = ( 'type'        => 'boundary',
+                                                                            'boundary'    => 'administrative',
+                                                                            'admin_level' => '4' );
+  %{ $attribute_translate{'engtype_1'}{'Territory'} }                  = ( 'type'        => 'boundary',
+                                                                            'boundary'    => 'administrative',
+                                                                            'admin_level' => '4' );
+
+ 
+  %{ $attribute_translate{'type'}{'Ferry'} }                           = ( 'route'       => 'ferry' );
+  %{ $attribute_translate{'type'}{'Freeway'} }                         = ( 'highway'     => 'motorway' );
+  %{ $attribute_translate{'type'}{'Other Paved'} }                     = ( 'highway'     => 'unclassified' );
+  %{ $attribute_translate{'type'}{'Primary'} }                         = ( 'highway'     => 'primary' );
+  %{ $attribute_translate{'type'}{'Secondary'} }                       = ( 'highway'     => 'secondary' );
+  %{ $attribute_translate{'type'}{'Tollway'} }                         = ( 'highway'     => 'motorway',
+                                                                            'toll'        => 'yes' );
+  %{ $attribute_translate{'type'}{'Unpaved'} }                         = ( 'highway'     => 'unclassified',
+                                                                            'surface'     => 'unpaved' );
+  %{ $attribute_translate{'type'}{'Winter'} }                          = ( 'highway'     => 'unclassified',
+                                                                            'winter_road' => 'yes' );
+
+  %{ $attribute_translate{'class'}{'Federal'} }                        = ( 'note'        => 'Federal Highway' );
+  %{ $attribute_translate{'class'}{'State'} }                          = ( 'note'        => 'State Highway' );
+  %{ $attribute_translate{'class'}{'Interstate'} }                     = ( 'note'        => 'Interstate Highway' );
+  %{ $attribute_translate{'class'}{'U/C'} }                            = ( 'highway'     => 'construction' );
+
+  %{ $attribute_translate{'divided'}{'Divided'} }                      = ( 'divided'     => 'yes',
+                                                                            'oneway'      => 'no' );
+  %{ $attribute_translate{'divided'}{'Undivided'} }                    = ( 'divided'     => 'no',
+                                                                            'oneway'      => 'no' );
+
+
+  %{ $attribute_translate{'featurecla'}{'Railroad'} }                  = ( 'railway'     => 'yes' );
+
+  %{ $attribute_translate{'featurecla'}{'Urban area'} }                = ( 'landuse'     => 'built',        # New in CommonMap
+                                                                            'place'       => 'town' );       # New combo in CommonMap
+
+  %{ $attribute_translate{'featurecla'}{'River'} }                     = ( 'waterway'    => 'river' );
+  %{ $attribute_translate{'featurecla'}{'Intermittent River'} }        = ( 'waterway'    => 'river',
+                                                                            'intermittent'=> 'yes' );        # New in CommonMap
+  %{ $attribute_translate{'featurecla'}{'River (Intermittent)'} }      = ( 'waterway'    => 'river',
+                                                                            'intermittent'=> 'yes' );        # New in CommonMap
+  %{ $attribute_translate{'featurecla'}{'Lake Centerline'} }           = ( 'waterway'    => 'network' );    # New in CommonMap
+  %{ $attribute_translate{'featurecla'}{'River (Intermittent)'} }      = ( 'waterway'    => 'network',
+                                                                            'intermittent'=> 'yes' );        # New in CommonMap
+  %{ $attribute_translate{'featurecla'}{'Lake'} }                      = ( 'natural'     => 'water' );
+  %{ $attribute_translate{'featurecla'}{'Reservoir'} }                 = ( 'natural'     => 'water',
+                                                                            'landuse'     => 'reservoir' );
+  %{ $attribute_translate{'featurecla'}{'Alkaline Lake'} }             = ( 'natural'     => 'water',
+                                                                            'salt'        => 'alkaline' );   # New in CommonMap
+  %{ $attribute_translate{'featurecla'}{'Playa'} }                     = ( 'natural'     => 'water',
+                                                                            'intermittent'=> 'yes',          # New in CommonMap
+                                                                            'salt'        => 'yes' );        # New in CommonMap
+
+  %{ $attribute_translate{'featurecla'}{'National Park Service'} }     = ( 'boundary'    => 'national_park' );
 
 
   ## static tags in the destination, to always be applied.
   #  This will typically be to apply the attribution and licence clause.
   %attributes_tattoo = (
-     'by'             => 'Natural Earth',
-     'licence'        => 'PD',
+     'by'                    => 'Natural Earth',
+     'licence'               => 'PD',
+     'accuracy:planimetric'  => '5600',   # Assuming scaling from 250k to 10m, c.f. Geoscience Australia planimetric accuracy
     );
 
   ## The affine transformation to apply to source geometry
