@@ -24,6 +24,7 @@ REM  Do the actual transformation of the files from
 REM  upstream source format to PostGIS format
 CALL schema/%1/%1.source.files.cmd
 
+echo 
 pause
 
 REM ends.
