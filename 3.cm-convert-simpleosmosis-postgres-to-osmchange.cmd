@@ -14,4 +14,5 @@ CALL ../connect/destination.cmd
 
 %OSMOSIS_DIRECTORY%\osmosis --read-pgsql host="localhost" database=%DATABASE_DESTINATION% user=%USER_DESTINATION% password=%PASSWORD_DESTINATION% --dataset-dump --read-xml file="null.osm" --derive-change --write-xml-change file="../for-upload/planetlet.change.osm"
 
+echo 
 pause
